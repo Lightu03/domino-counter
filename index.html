@@ -472,8 +472,8 @@ async function startStream(getter, screen) {
     document.body.appendChild(video); video.srcObject=stream; await video.play();
     src=video; isLive=true; isScreen=screen;
     stream.getVideoTracks()[0].addEventListener('ended', stopAll);
-    const wait = () => srcW() ? (updateButtons(), setStatus(screen
-      ? 'Tap <b>Watch</b>. Your hand is the row of tiles along the bottom; everything else counts as the board. Share only the <b>game tab</b>, not the whole screen.'
+    const wait = () => srcW() ? (updateButtons(), screen && setWatch(true), setStatus(screen
+      ? 'Watching the game. Your hand is the row of tiles along the bottom; everything else is the board, including the other players’ moves. Keep this window visible next to the game.'
       : 'Point the camera at <b>your hand</b> and tap <b>Read my hand</b>. Then point it at the table and tap <b>Watch</b>.')) : setTimeout(wait,100);
     wait();
   } catch (err) { setStatus('Could not start: '+err.message); }
@@ -489,6 +489,10 @@ $('#file').onchange = e => { const f=e.target.files[0]; if (!f) return;
     setStatus(`Found ${lastDet.length} tile(s) in the photo. Add them as <b>my hand</b> or as <b>played</b>.`); };
   img.src=URL.createObjectURL(f); e.target.value=''; };
 $('#stopBtn').onclick = stopAll;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && watching) document.title = '⚠ Pip Counter: keep me visible';
+  else { document.title = 'Domino Pip Counter'; if (watching) setStatus('Back. Still watching.'); }
+});
 $('#saveBtn').onclick = () => {
   const W=srcW(), H=srcH(); if (!W) { setStatus('Nothing to save yet.'); return; }
   const c=document.createElement('canvas'); c.width=W; c.height=H; c.getContext('2d').drawImage(src,0,0);
@@ -545,7 +549,7 @@ function setWatch(on) {
 }
 function watchTick() {
   if (!watching) return;
-  if (isLive && !busy) {
+  if (isLive && !busy) try {
     lastDet = scanFrame();
     const hs = handSet(lastDet);
     const table = new Set(lastDet.filter(t=>!hs.has(t)).map(t=>t.k));
@@ -559,7 +563,7 @@ function watchTick() {
       if (recent.length===MIRROR_N) mirrorScreen(mt, mh);
     }
     else accumulate(tc, hc);
-  }
+  } catch (err) { setStatus('Scan error (still watching): '+err.message); }
   watchTimer = setTimeout(watchTick, 60);   // next scan right away
 }
 
@@ -624,7 +628,7 @@ $('#handBtn').onclick = async () => {
     const cnt={};
     for (let i=0;i<5;i++) { lastDet=scanFrame(); new Set(pick(lastDet)).forEach(k=>cnt[k]=(cnt[k]||0)+1); await new Promise(r=>setTimeout(r,250)); }
     busy=false; found = Object.keys(cnt).filter(k=>cnt[k]>=3);
-    if (wasWatching) setWatch(true);
+    setWatch(true);   // reading the hand is step 1; watching the table follows automatically
   }
   const fresh = found.filter(k=>!S.tiles[k] || S.tiles[k].s!=='mine');
   if (fresh.length) mutate(()=>fresh.forEach(k=>addTile(k,'mine')));
@@ -643,8 +647,8 @@ function loop() {
     vctx.drawImage(src,0,0,cw,ch);
     const fs=Math.max(13,cw/50);
     vctx.font=`bold ${fs}px system-ui`;
-    if (watching) { const hsN=handSet(lastDet).size, txt=`scan ${scanMs} ms · board ${lastDet.length-hsN} · hand ${hsN}`;
-      vctx.fillStyle='rgba(0,0,0,.7)'; vctx.fillRect(4,4,vctx.measureText(txt).width+12,fs+8); vctx.fillStyle='#5fd38d'; vctx.fillText(txt,10,fs+6); }
+    if (isLive) { const hsN=handSet(lastDet).size, txt = watching ? `● LIVE · scan ${scanMs} ms · board ${lastDet.length-hsN} · hand ${hsN}` : '❚❚ PAUSED: tap Watch';
+      vctx.fillStyle='rgba(0,0,0,.75)'; vctx.fillRect(4,4,vctx.measureText(txt).width+12,fs+8); vctx.fillStyle=watching?'#5fd38d':'#e5674f'; vctx.fillText(txt,10,fs+6); }
     if (roi) {
       const rx=roi.x*cw, ry=roi.y*ch, rw=roi.w*cw, rh=roi.h*ch;
       vctx.strokeStyle='#f2c14e'; vctx.lineWidth=3; vctx.setLineDash([10,6]); vctx.strokeRect(rx,ry,rw,rh); vctx.setLineDash([]);
