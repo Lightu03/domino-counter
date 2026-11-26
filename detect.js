@@ -7,7 +7,7 @@
  *  - touching tiles (T / L shapes on a board) are split by fitting tile-sized rectangles
  *  - pips   = round spots whose colour clearly differs from that tile's own face colour,
  *             all about the same size, fully inside the tile
- *  - a blank tile (0|0) only counts if its divider line is visible (rejects face-down tiles)
+ *  - a tile only counts if its divider line is visible (rejects face-down tiles, panels, buttons)
  */
 (function (root) {
   function lum(rgba, n) {
@@ -200,6 +200,17 @@
     return keep;
   }
 
+  const LAY = { 0: [], 1: [[1, 1]], 2: [[0, 0], [2, 2]], 3: [[0, 0], [1, 1], [2, 2]], 4: [[0, 0], [2, 0], [0, 2], [2, 2]],
+    5: [[0, 0], [2, 0], [0, 2], [2, 2], [1, 1]], 6: [[0, 0], [2, 0], [0, 1], [2, 1], [0, 2], [2, 2]], 7: [[0, 0], [2, 0], [0, 1], [2, 1], [0, 2], [2, 2], [1, 1]],
+    8: [[0, 0], [1, 0], [2, 0], [0, 1], [2, 1], [0, 2], [1, 2], [2, 2]], 9: [[0, 0], [1, 0], [2, 0], [0, 1], [1, 1], [2, 1], [0, 2], [1, 2], [2, 2]] };
+  const PATTERNS = {};
+  for (const n in LAY) {
+    const set = new Set();
+    for (const f of [p => p, ([x, y]) => [y, x], ([x, y]) => [2 - x, y], ([x, y]) => [x, 2 - y], ([x, y]) => [2 - y, x], ([x, y]) => [y, 2 - x], ([x, y]) => [2 - x, 2 - y], ([x, y]) => [2 - y, 2 - x]])
+      set.add(LAY[n].map(f).map(([x, y]) => y * 3 + x).sort((a, b) => a - b).join(','));
+    PATTERNS[n] = set;
+  }
+
   function median(arr) { arr.sort((a, b) => a - b); return arr[arr.length >> 1] || 0; }
 
   function readGeo(rgba, w, h, geo, maxPip) {
@@ -241,12 +252,14 @@
       if (d < W * 0.07 || d > W * 0.32 || c.area < 4) continue;
       const cw = c.maxx - c.minx + 1, ch = c.maxy - c.miny + 1;
       if (cw / ch < 0.5 || cw / ch > 2 || c.area / (cw * ch) < 0.5) continue;
-      blobs.push({ area: c.area, x: c.sx / c.area + x0, y: c.sy / c.area + y0 });
+      blobs.push({ id: c.id, area: c.area, x: c.sx / c.area + x0, y: c.sy / c.area + y0 });
     }
     if (blobs.length > 2) {
       const med = median(blobs.map(b => b.area));
       blobs = blobs.filter(b => b.area > med * 0.4 && b.area < med * 2.5);
     }
+    const pipId = new Uint8Array(comps.length + 1);
+    for (const b of blobs) pipId[b.id] = 1;
     const segL = L / n, segs = Array.from({ length: n }, () => ({ c: [0, 0], pips: [] }));
     for (const b of blobs) {
       const pos = (b.x - cx) * ux + (b.y - cy) * uy + hl;
@@ -257,28 +270,38 @@
         const u = (within - half * segL / 2) / (segL / 2), v = ((b.x - cx) * vx + (b.y - cy) * vy + hw) / W;
         const off = q => Math.min(Math.abs(q - 0.25), Math.abs(q - 0.5), Math.abs(q - 0.75));
         if (off(u) > 0.14 || off(v) > 0.14) segs[k].bad = true;
+        const cell = q => Math.min(2, Math.max(0, Math.round((q - 0.25) / 0.25)));
+        (segs[k].cells || (segs[k].cells = [[], []]))[half].push(cell(v) * 3 + cell(u));
       }
       segs[k].c[half]++; segs[k].pips.push({ x: b.x, y: b.y });
     }
     // a segment with no pips must show a divider line in its middle (else: face-down tile / not a tile)
+    // profile of colour difference along the tile (pips left out); the divider is a peak near the middle
     const dividerOK = k => {
-      const mid = -hl + (k + 0.5) * segL, band = Math.max(1.5, W * 0.05);
-      let on = 0, onN = 0, off = 0, offN = 0;
+      const start = -hl + k * segL, nb = Math.max(4, Math.ceil(segL)), sum = new Float64Array(nb), cnt = new Uint32Array(nb);
       for (let i = 0; i < inR.length; i++) {
-        if (!inR[i] || Math.abs(across[i]) > W * 0.3) continue;
-        const dt = Math.abs(along[i] - mid);
-        if (dt <= band) { on += dist[i]; onN++; }
-        else if (Math.abs(dt - segL * 0.22) <= band) { off += dist[i]; offN++; }
+        if (!inR[i] || Math.abs(across[i]) > W * 0.3 || pipId[lab[i]]) continue;
+        const bin = Math.floor(along[i] - start);
+        if (bin >= 0 && bin < nb) { sum[bin] += dist[i]; cnt[bin]++; }
       }
-      on /= onN || 1; off /= offN || 1;
-      return on > 8 && on > off * 2 + 4;
+      const prof = Array.from(sum, (v, i) => cnt[i] ? v / cnt[i] : 0);
+      let on = 0;
+      for (let i = Math.floor(nb * 0.43); i <= Math.ceil(nb * 0.57) && i < nb; i++) on = Math.max(on, prof[i]);
+      const rest = prof.filter((_, i) => (i > nb * 0.1 && i < nb * 0.38) || (i > nb * 0.62 && i < nb * 0.9)).sort((p, q) => p - q);
+      const off = rest[rest.length >> 1] || 0;
+      const p90 = rest[Math.floor(rest.length * 0.9)] || 0;
+      return on > 7 && on > off + Math.max(5, off) && p90 < on * 0.7;
     };
     return segs.map((sg, k) => {
       const a0 = -hl + k * segL, a1 = a0 + segL;
       const cs = [[a0, -hw], [a1, -hw], [a1, hw], [a0, hw]].map(([p, q]) => [cx + p * ux + q * vx, cy + p * uy + q * vy]);
       const [a, b] = sg.c;
       let ok = a <= maxPip && b <= maxPip && !sg.bad;
-      if (ok && a + b === 0) ok = dividerOK(k);
+      if (ok && maxPip <= 9 && sg.cells) for (const h of [0, 1]) {     // pips must form a real domino pattern
+        const key = sg.cells[h].slice().sort((p, q) => p - q).join(',');
+        if (!PATTERNS[sg.c[h]].has(key)) ok = false;
+      }
+      if (ok) ok = dividerOK(k);   // every real domino has a line across its middle
       return { a, b, ok, corners: cs, pips: sg.pips, W };
     });
   }

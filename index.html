@@ -108,7 +108,7 @@
       <button id="handBtn" class="big">✋ Read my hand</button>
       <button id="watchBtn" class="big">👁 Watch</button>
     </div>
-    <div id="status">Tap <b>Camera</b> (or <b>Screen</b> on a computer). Online game: drag a box around the <b>board</b> and tap <b>Watch</b>. Everything is then automatic.</div>
+    <div id="status">Online game: tap <b>Screen</b>, share the game tab and tap <b>Watch</b>. Everything is then automatic. Real table: tap <b>Camera</b>.</div>
     <div class="chips" id="chips"></div>
     <div class="muted" style="margin-top:8px">My hand (tap a tile if you played it and it wasn't picked up):</div>
     <div class="hand" id="hand"></div>
@@ -146,7 +146,7 @@
     <label>Tiles per hand <select id="handSel"></select></label>
     <label>Camera only sees the table (my tiles seen there = I played them) <input type="checkbox" id="tableChk"></label>
     <p class="muted">Tile and pip colours are detected automatically: white, black, grey or coloured pips.<br>
-    The box you drag on the video marks the <b>board</b>. Tiles outside the box are read as <b>your hand</b>. Tap the video once to remove the box.</p>
+    Online games: your hand is found automatically (the row of tiles at the bottom). If that goes wrong, drag a box around the <b>board</b>: tiles outside it then count as your hand. Tap the video once to remove the box.</p>
     <div class="row" style="justify-content:space-between; margin-top:14px">
       <button type="button" id="newBtn">New round</button>
       <button value="close" class="on">Done</button>
@@ -180,7 +180,7 @@ const fmt = k => unkey(k).join('|');
 const has = (t,n) => t[0]===n || t[1]===n;
 
 function fresh(setN=6, nPlayers=4, hand=7, keep={}) {
-  return Object.assign({ setN, nPlayers, hand, names:NAMES[nPlayers].slice(), tiles:{}, order:[], endsFix:null, voids:Array.from({length:nPlayers},()=>[]),
+  return Object.assign({ setN, nPlayers, hand, names:NAMES[nPlayers].slice(), tiles:{}, order:[], seen:[], endsFix:null, voids:Array.from({length:nPlayers},()=>[]),
     draws:Array(nPlayers).fill(0), log:[], recent:[], cur:1, track:false, tableOnly:true }, keep);
 }
 let S; try { S = JSON.parse(localStorage.getItem(STORE)); } catch(e) {}
@@ -333,6 +333,7 @@ function render() {
   $('#bigNum').textContent = C.cMin===C.cMax ? C.cMin : `${C.cMin}–${C.cMax}`;
   $('#countLbl').textContent = C.cMin===C.cMax ? 'Opponents hold (pips)' : 'Opponents hold (pips, range)';
   $('#countSub').innerHTML = `<b>${C.K}</b> tiles in their hands · <b>${Math.max(0,C.boneyard)}</b> in the boneyard<br><b>${C.unknownPips}</b> pips unseen · my hand <b>${sumP(C.mine)}</b> pips (${C.mine.length} tiles)`
+    + `<br><span class="muted">${S.nPlayers} players · ${S.hand} tiles each · <a href="#" id="setLink" style="color:var(--gold)">change</a></span>`
     + (C.boneyard<0 ? `<br><span class="warn">Too many tiles marked. Check the grid or the settings.</span>` : '');
 
   // ends + best move
@@ -377,7 +378,7 @@ function render() {
 
 // state changes (call inside mutate)
 function addTile(k, s, by) {
-  if (s==='mine') { S.tiles[k]={s:'mine'}; S.order=S.order.filter(x=>x!==k); S.log.push(`My hand: ${fmt(k)}`); }
+  if (s==='mine') { S.tiles[k]={s:'mine'}; if (!(S.seen||(S.seen=[])).includes(k)) S.seen.push(k); S.order=S.order.filter(x=>x!==k); S.log.push(`My hand: ${fmt(k)}`); }
   else {
     if (by===undefined) by = S.track ? S.cur : -1;
     S.tiles[k]={s:'played', by}; S.order=S.order.filter(x=>x!==k); S.order.push(k);
@@ -410,6 +411,7 @@ function setEnds() {
 $('#endL').onchange = setEnds; $('#endR').onchange = setEnds;
 $('#undoBtn').onclick = undo;
 $('#setBtn').onclick = () => $('#setDlg').showModal();
+document.addEventListener('click', e => { if (e.target.id==='setLink') { e.preventDefault(); $('#setDlg').showModal(); } });
 $('#trackChk').onchange = e => mutate(()=>{ S.track=e.target.checked; });
 $('#tableChk').onchange = e => mutate(()=>{ S.tableOnly=e.target.checked; });
 const keepPrefs = () => ({ names:S.names, track:S.track, tableOnly:S.tableOnly });
@@ -466,7 +468,7 @@ async function startStream(getter, screen) {
     src=video; isLive=true; isScreen=screen;
     stream.getVideoTracks()[0].addEventListener('ended', stopAll);
     const wait = () => srcW() ? (updateButtons(), setStatus(screen
-      ? 'Drag a box around the <b>board</b> (your hand stays outside it), then tap <b>Watch</b>.'
+      ? 'Tap <b>Watch</b>. Your hand is the row of tiles along the bottom; everything else counts as the board. Share only the <b>game tab</b>, not the whole screen.'
       : 'Point the camera at <b>your hand</b> and tap <b>Read my hand</b>. Then point it at the table and tap <b>Watch</b>.')) : setTimeout(wait,100);
     wait();
   } catch (err) { setStatus('Could not start: '+err.message); }
@@ -494,18 +496,34 @@ view.addEventListener('pointerup', () => {
   else if (drag) setStatus(`Board box set. Tiles inside are <b>played</b>; tiles outside are <b>your hand</b>.${watching?'':' Tap <b>Watch</b>.'}`);
   drag=null; if (!isLive && src) lastDet=scanFrame(); });
 const inBox = t => !roi || (t.cx>=roi.x && t.cx<=roi.x+roi.w && t.cy>=roi.y && t.cy<=roi.y+roi.h);
+// Which detected tiles are MY hand?  With a board box: everything outside it.
+// Online game without a box: the row of tiles along the bottom of the screen (where games show your hand).
+function handSet(det) {
+  if (roi) return new Set(det.filter(t=>!inBox(t)));
+  if (!isScreen || !det.length) return new Set();
+  const low = det.reduce((a,b)=>b.cy>a.cy?b:a);
+  if (low.cy < 0.6) return new Set();
+  return new Set(det.filter(t=>Math.abs(t.cy-low.cy) < low.hN*0.3));
+}
+const autoSplit = () => !!roi || isScreen;
 
 // run the detector on the whole frame; returns tiles with normalised coords
 function scanFrame() {
   const W=srcW(), H=srcH(); if (!W||!H) return [];
-  const scale=Math.min(1, (isScreen?1280:1100)/Math.max(W,H));
+  // resolution adapts to tile size: aim for tiles ~36px wide (fast when tiles are big, sharp when small)
+  const target = scanFrame.max || 1280;
+  const scale=Math.min(1, target/Math.max(W,H));
   const ow=Math.max(8,Math.round(W*scale)), oh=Math.max(8,Math.round(H*scale));
   scanFrame.c = scanFrame.c || document.createElement('canvas');
   const oc=scanFrame.c; oc.width=ow; oc.height=oh;
   const octx=oc.getContext('2d',{willReadFrequently:true}); octx.drawImage(src,0,0,ow,oh);
   const tiles = DominoDetect.detect(octx.getImageData(0,0,ow,oh).data, ow, oh, {maxPip:S.setN});
+  if (tiles.length) { const ws=tiles.map(t=>t.W).sort((a,b)=>a-b), mw=ws[ws.length>>1];
+    scanFrame.max = Math.round(Math.min(1600, Math.max(640, Math.max(ow,oh) * 36 / mw))); }
+  else scanFrame.max = Math.min(1600, (scanFrame.max||1280) + 160);   // nothing found: look closer next time
   return tiles.map(t=>{ const cs=t.corners.map(([x,y])=>[x/ow,y/oh]);
-    return { k:key(t.a,t.b), corners:cs, cx:cs.reduce((s,c)=>s+c[0],0)/4, cy:cs.reduce((s,c)=>s+c[1],0)/4, pips:t.pips.map(p=>[p.x/ow,p.y/oh]) }; });
+    const ys=cs.map(c=>c[1]);
+    return { k:key(t.a,t.b), corners:cs, cx:cs.reduce((s,c)=>s+c[0],0)/4, cy:cs.reduce((s,c)=>s+c[1],0)/4, hN:Math.max(...ys)-Math.min(...ys), pips:t.pips.map(p=>[p.x/ow,p.y/oh]) }; });
 }
 
 function setWatch(on) {
@@ -517,16 +535,18 @@ function watchTick() {
   if (!watching) return;
   if (isLive && !busy) {
     lastDet = scanFrame();
-    const table = new Set(lastDet.filter(inBox).map(t=>t.k));
-    const handSet = new Set(roi ? lastDet.filter(t=>!inBox(t)).map(t=>t.k) : []);
-    votes.push({table, hand:handSet}); if (votes.length>VOTE_N) votes.shift();
+    const hs = handSet(lastDet);
+    const table = new Set(lastDet.filter(t=>!hs.has(t)).map(t=>t.k));
+    const hand = new Set([...hs].map(t=>t.k));
+    votes.push({table, hand}); if (votes.length>VOTE_N) votes.shift();
     const tc={}, hc={};
     votes.forEach(v=>{ v.table.forEach(k=>tc[k]=(tc[k]||0)+1); v.hand.forEach(k=>hc[k]=(hc[k]||0)+1); });
-    const mineToPlayed = !!roi || (!isScreen && S.tableOnly);   // my tile seen on the board = I played it
+    const mineToPlayed = autoSplit() || S.tableOnly;   // my tile seen on the board = I played it
     const newPlayed = Object.keys(tc).filter(k=>tc[k]>=VOTE_NEED && (!S.tiles[k] || (mineToPlayed && S.tiles[k].s==='mine')));
-    const newMine = Object.keys(hc).filter(k=>hc[k]>=VOTE_NEED && !S.tiles[k] && !newPlayed.includes(k));
+    // a tile seen in my hand row is mine (also fixes a tile that was wrongly counted as played)
+    const newMine = Object.keys(hc).filter(k=>hc[k]>=VOTE_NEED && (!S.tiles[k] || S.tiles[k].s==='played') && !newPlayed.includes(k));
     if (newPlayed.length || newMine.length) {
-      mutate(()=>{ newMine.forEach(k=>addTile(k,'mine')); newPlayed.forEach(k=>addTile(k,'played', S.tiles[k] && S.tiles[k].s==='mine' ? 0 : undefined)); });
+      mutate(()=>{ newMine.forEach(k=>addTile(k,'mine')); newPlayed.forEach(k=>addTile(k,'played', S.tiles[k] && S.tiles[k].s==='mine' && (S.seen||[]).includes(k) ? 0 : undefined)); });
       setStatus([newPlayed.length?'Played: '+newPlayed.map(fmt).join(', '):'', newMine.length?'My hand: '+newMine.map(fmt).join(', '):''].filter(Boolean).join(' · '), true);
       if (navigator.vibrate) navigator.vibrate(40);
     }
@@ -543,7 +563,7 @@ $('#watchBtn').onclick = () => {
 };
 $('#handBtn').onclick = async () => {
   let found;
-  const pick = det => det.filter(t=>!roi || !inBox(t)).map(t=>t.k);   // with a board box: only tiles outside it
+  const pick = det => autoSplit() ? [...handSet(det)].map(t=>t.k) : det.map(t=>t.k);   // online game: only my hand row
   if (!isLive) found = [...new Set(pick(lastDet))];
   else {
     const wasWatching = watching; setWatch(false); busy=true; updateButtons(); setStatus('Reading your hand… hold still');
@@ -574,12 +594,13 @@ function loop() {
       vctx.strokeStyle='#f2c14e'; vctx.lineWidth=3; vctx.setLineDash([10,6]); vctx.strokeRect(rx,ry,rw,rh); vctx.setLineDash([]);
       vctx.fillStyle='#f2c14e'; vctx.fillText('BOARD', rx+6, ry+fs+4);
     }
+    const hsDraw = handSet(lastDet);
     for (const t of lastDet) {
       const st=S.tiles[t.k], col = st ? (st.s==='mine' ? '#5aa9e6' : '#5fd38d') : '#f2c14e';
       vctx.strokeStyle=col; vctx.lineWidth=3; vctx.beginPath();
       t.corners.forEach(([x,y],i)=> i ? vctx.lineTo(x*cw,y*ch) : vctx.moveTo(x*cw,y*ch)); vctx.closePath(); vctx.stroke();
       vctx.fillStyle='#e5674f'; t.pips.forEach(([x,y])=>{ vctx.beginPath(); vctx.arc(x*cw,y*ch,Math.max(2.5,cw/300),0,7); vctx.fill(); });
-      const lx=Math.min(...t.corners.map(c=>c[0]))*cw, ly=Math.min(...t.corners.map(c=>c[1]))*ch, label=fmt(t.k);
+      const lx=Math.min(...t.corners.map(c=>c[0]))*cw, ly=Math.min(...t.corners.map(c=>c[1]))*ch, label=(hsDraw.has(t)?'✋':'')+fmt(t.k);
       vctx.fillStyle='rgba(0,0,0,.75)'; vctx.fillRect(lx, ly-fs-4, vctx.measureText(label).width+8, fs+4);
       vctx.fillStyle=col; vctx.fillText(label, lx+4, ly-5);
     }
