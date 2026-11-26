@@ -9,117 +9,133 @@
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon.svg">
 <style>
-  :root { --felt:#0f3d2e; --felt2:#155240; --ink:#f4f1e8; --muted:#a9c2b6; --gold:#f2c14e; --red:#e5674f; --blue:#5aa9e6; --card:#123f31; --line:#2b6b55; }
+  :root { --felt:#0f3d2e; --felt2:#155240; --ink:#f4f1e8; --muted:#a9c2b6; --gold:#f2c14e; --red:#e5674f; --blue:#5aa9e6; --green:#5fd38d; --card:#123f31; --line:#2b6b55; }
   * { box-sizing:border-box; }
   body { margin:0; font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; background:var(--felt); color:var(--ink); padding-bottom:40px; }
-  header { position:sticky; top:0; z-index:5; background:#0b2e22; border-bottom:1px solid var(--line); padding:10px 12px; display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  header { position:sticky; top:0; z-index:5; background:#0b2e22; border-bottom:1px solid var(--line); padding:8px 12px; display:flex; gap:8px; align-items:center; }
   header h1 { font-size:17px; margin:0 auto 0 0; }
-  main { max-width:900px; margin:0 auto; padding:12px; display:grid; gap:12px; }
-  section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px; }
-  h2 { font-size:14px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:0 0 8px; }
-  button, select { font:inherit; color:var(--ink); background:var(--felt2); border:1px solid var(--line); border-radius:8px; padding:7px 11px; cursor:pointer; }
+  main { max-width:900px; margin:0 auto; padding:10px; display:grid; gap:10px; }
+  section, details { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px; }
+  summary { cursor:pointer; font-weight:600; color:var(--muted); }
+  h2 { font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:0 0 8px; }
+  button, select { font:inherit; color:var(--ink); background:var(--felt2); border:1px solid var(--line); border-radius:10px; padding:8px 12px; cursor:pointer; }
   button:active { transform:scale(.97); }
+  button:disabled { opacity:.4; }
   button.on { background:var(--gold); color:#222; border-color:var(--gold); font-weight:600; }
+  button.big { font-size:17px; padding:12px 16px; flex:1; min-width:140px; }
   button.small { padding:4px 8px; font-size:13px; }
-  .row { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
-  .big { font-size:40px; font-weight:700; color:var(--gold); line-height:1; }
-  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; }
-  .stat { background:#0d3326; border-radius:10px; padding:10px; }
-  .stat .lbl { color:var(--muted); font-size:12px; }
-  .stat .val { font-size:22px; font-weight:700; }
-  .players { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:10px; margin-top:10px; }
-  .player { background:#0d3326; border-radius:10px; padding:10px; border:2px solid transparent; }
-  .player.cur { border-color:var(--gold); }
-  .player .name { font-weight:700; cursor:pointer; }
-  .player .pips { font-size:20px; font-weight:700; color:var(--gold); }
+  .row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  .count { display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+  .count .big { font-size:56px; font-weight:800; color:var(--gold); line-height:1; }
+  .count .sub { color:var(--muted); font-size:14px; }
+  .count .sub b { color:var(--ink); }
+  #view { width:100%; border-radius:10px; background:#000; touch-action:none; display:block; margin:10px 0; }
+  #status { min-height:1.4em; font-size:14px; color:var(--muted); margin-top:8px; }
+  #status.hot { color:var(--green); font-weight:600; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  .chip { background:#0d3326; border:1px solid var(--line); border-radius:20px; padding:3px 4px 3px 10px; display:inline-flex; align-items:center; gap:6px; font-weight:600; }
+  .chip.mine { border-color:var(--blue); }
+  .chip button { padding:0 7px; border-radius:20px; font-size:13px; }
   .muted { color:var(--muted); font-size:13px; }
   .warn { color:var(--red); font-size:13px; }
-  .void { display:inline-block; background:var(--red); color:#fff; border-radius:5px; padding:0 6px; margin:1px; font-size:12px; }
-  .nums { display:flex; flex-wrap:wrap; gap:6px; }
-  .num { background:#0d3326; border-radius:8px; padding:6px 8px; text-align:center; min-width:46px; }
-  .num b { display:block; font-size:18px; }
-  .num.zero { opacity:.4; }
   .grid { display:grid; gap:4px; }
   .tile { padding:2px; background:none; border:2px solid transparent; border-radius:7px; position:relative; line-height:0; }
   .tile svg { width:100%; height:auto; }
   .tile.mine { border-color:var(--blue); background:rgba(90,169,230,.25); }
-  .tile.played { opacity:.28; }
-  .tile.played.flash, .tile.mine.flash { opacity:1; }
-  .tile .badge { position:absolute; top:-4px; right:-4px; background:var(--gold); color:#222; border-radius:6px; font-size:10px; line-height:14px; padding:0 4px; font-weight:700; }
+  .tile.played { opacity:.25; }
   .legend span { display:inline-block; margin-right:12px; }
   .legend i { display:inline-block; width:12px; height:12px; border-radius:3px; vertical-align:-2px; margin-right:4px; }
-  #view { width:100%; border-radius:8px; background:#000; touch-action:none; display:block; }
-  .results { display:grid; gap:6px; margin-top:8px; }
-  .res { display:flex; gap:8px; align-items:center; background:#0d3326; border-radius:8px; padding:6px; }
-  .res svg { width:70px; height:auto; }
-  .res.dup { opacity:.5; }
-  .log { max-height:180px; overflow:auto; font-size:13px; margin:0; padding-left:18px; }
-  dialog { background:var(--card); color:var(--ink); border:1px solid var(--line); border-radius:12px; max-width:420px; }
+  .players { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:8px; margin-top:8px; }
+  .player { background:#0d3326; border-radius:10px; padding:10px; border:2px solid transparent; }
+  .player.cur { border-color:var(--gold); }
+  .player .name { font-weight:700; cursor:pointer; }
+  .player .pips { font-size:20px; font-weight:700; color:var(--gold); }
+  .void { display:inline-block; background:var(--red); color:#fff; border-radius:5px; padding:0 6px; margin:1px; font-size:12px; }
+  .nums { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  .num { background:#0d3326; border-radius:8px; padding:6px 8px; text-align:center; min-width:46px; }
+  .num b { display:block; font-size:18px; }
+  .num.zero { opacity:.4; }
+  .log { max-height:180px; overflow:auto; font-size:13px; margin:8px 0 0; padding-left:18px; }
+  dialog { background:var(--card); color:var(--ink); border:1px solid var(--line); border-radius:12px; max-width:420px; width:92vw; }
   dialog::backdrop { background:rgba(0,0,0,.6); }
-  label.chk { display:inline-flex; align-items:center; gap:5px; font-size:13px; color:var(--muted); }
+  dialog label { display:flex; justify-content:space-between; align-items:center; gap:10px; margin:10px 0; }
+  label.chk { display:inline-flex; align-items:center; gap:6px; font-size:14px; }
 </style>
 </head>
 <body>
 <header>
   <h1>🁫 Pip Counter</h1>
-  <select id="setSel" title="Domino set"><option value="6">Double-6</option><option value="9">Double-9</option><option value="12">Double-12</option></select>
-  <select id="plSel" title="Players"><option value="2">2 players</option><option value="3">3 players</option><option value="4">4 players</option></select>
-  <select id="handSel" title="Tiles per hand"></select>
   <button id="undoBtn">↶ Undo</button>
-  <button id="newBtn">New round</button>
+  <button id="setBtn">⚙</button>
 </header>
 
 <main>
   <section>
-    <h2>Count</h2>
-    <div class="stats" id="stats"></div>
-    <div class="players" id="players"></div>
-  </section>
+    <div class="count">
+      <div><div class="muted" id="countLbl">Opponents hold</div><div class="big" id="bigNum">–</div></div>
+      <div class="sub" id="countSub"></div>
+    </div>
 
-  <section>
-    <h2>Tap tiles to mark them</h2>
-    <div class="row" id="modeBar" style="margin-bottom:8px"></div>
-    <div class="row" id="whoBar" style="margin-bottom:8px"></div>
-    <div class="grid" id="grid"></div>
-    <div class="legend muted" style="margin-top:8px"><span><i style="background:var(--blue)"></i>In my hand</span><span><i style="background:#555"></i>Played (faded)</span><span><i style="background:#fff"></i>Unseen</span></div>
-  </section>
+    <canvas id="view" width="640" height="300"></canvas>
 
-  <section>
-    <h2>Unseen tiles per number</h2>
-    <div class="nums" id="nums"></div>
-  </section>
-
-  <section>
-    <h2>Scan with camera / screen</h2>
-    <div class="row">
+    <div class="row" id="srcRow">
       <button id="camBtn">📷 Camera</button>
       <button id="scrBtn">🖥 Screen</button>
-      <label class="row" style="gap:4px"><button id="upBtn" type="button">🖼 Photo</button><input id="file" type="file" accept="image/*" capture="environment" hidden></label>
-      <button id="stopBtn">Stop</button>
-      <label class="chk"><input type="checkbox" id="darkChk"> Dark tiles</label>
+      <button id="upBtn">🖼 Photo</button>
+      <input id="file" type="file" accept="image/*" hidden>
+      <button id="stopBtn" class="small">Stop</button>
     </div>
-    <p class="muted" id="scanHint">Start the camera or share a screen, then drag a box around the tiles you want to read (or leave the whole frame) and press <b>Scan</b>.</p>
-    <canvas id="view" width="640" height="360"></canvas>
     <div class="row" style="margin-top:8px">
-      <button id="scanBtn" class="on">🔍 Scan</button>
-      <button id="fullBtn">Full frame</button>
-      <button id="resumeBtn">Resume live</button>
-      <label class="chk"><input type="checkbox" id="autoChk"> Auto-scan every 2s (screen)</label>
+      <button id="handBtn" class="big">✋ 1. Read my hand</button>
+      <button id="watchBtn" class="big">👁 2. Watch table</button>
     </div>
-    <div id="resultBar" class="row" style="margin-top:8px"></div>
-    <div class="results" id="results"></div>
+    <div id="status">Start the camera, point it at your hand and tap <b>Read my hand</b>. Then point it at the table and tap <b>Watch table</b>. New tiles are counted by themselves.</div>
+    <div class="chips" id="chips"></div>
   </section>
 
   <section>
-    <h2>Log</h2>
-    <ol class="log" id="log" reversed></ol>
+    <h2>All tiles: tap one to fix it</h2>
+    <div class="grid" id="grid"></div>
+    <div class="legend muted" style="margin-top:8px"><span><i style="background:#fff"></i>Unseen</span><span><i style="background:#555"></i>Played</span><span><i style="background:var(--blue)"></i>My hand</span> · tap: unseen → played → mine → unseen</div>
   </section>
+
+  <details id="plDetails">
+    <summary>Players, passes &amp; turns (optional)</summary>
+    <p class="muted">Turn on turn tracking to get a pip range for <i>each</i> opponent. Detected tiles are then assigned to whoever's turn it is, and Pass tells the app which numbers that player doesn't have.</p>
+    <label class="chk"><input type="checkbox" id="trackChk"> Track turns</label>
+    <div class="players" id="players"></div>
+  </details>
+
+  <details>
+    <summary>Unseen tiles per number</summary>
+    <div class="nums" id="nums"></div>
+  </details>
+
+  <details>
+    <summary>Log</summary>
+    <ol class="log" id="log" reversed></ol>
+  </details>
 </main>
+
+<dialog id="setDlg">
+  <form method="dialog">
+    <h3 style="margin-top:0">Settings</h3>
+    <label>Domino set <select id="setSel"><option value="6">Double-6</option><option value="9">Double-9</option><option value="12">Double-12</option></select></label>
+    <label>Players <select id="plSel"><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></label>
+    <label>Tiles per hand <select id="handSel"></select></label>
+    <label>Black tiles with white pips <input type="checkbox" id="darkChk"></label>
+    <p class="muted">Optional: drag a box on the video to watch only part of it (for example to leave out your own hand on screen). Tap the video once to reset it to the full frame.</p>
+    <div class="row" style="justify-content:space-between; margin-top:14px">
+      <button type="button" id="newBtn">New round</button>
+      <button value="close" class="on">Done</button>
+    </div>
+  </form>
+</dialog>
 
 <dialog id="passDlg">
   <form method="dialog">
     <h3 style="margin-top:0" id="passTitle">Pass</h3>
-    <p class="muted">Which numbers were open on the ends? A player who passes has none of them.</p>
+    <p class="muted">Which numbers were open on the ends?</p>
     <div class="row" id="passNums"></div>
     <div class="row" style="margin-top:12px; justify-content:flex-end">
       <button value="cancel">Cancel</button>
@@ -131,24 +147,25 @@
 <script src="detect.js"></script>
 <script>
 const $ = s => document.querySelector(s);
-const STORE = 'domino-pip-counter-v1';
+const STORE = 'domino-pip-counter-v2';
 const NAMES = { 2:['Me','Opponent'], 3:['Me','Right','Left'], 4:['Me','Right','Partner','Left'] };
 const key = (a,b) => a<=b ? a+'-'+b : b+'-'+a;
+const unkey = k => k.split('-').map(Number);
 const allTiles = N => { const r=[]; for(let a=0;a<=N;a++) for(let b=a;b<=N;b++) r.push([a,b]); return r; };
 const pipsOf = t => t[0]+t[1];
 const sumP = arr => arr.reduce((s,t)=>s+pipsOf(t),0);
-const fmt = (a,b) => `${a}|${b}`;
+const fmt = k => unkey(k).join('|');
 
-function fresh(setN=6, nPlayers=4, hand=7) {
-  return { setN, nPlayers, hand, names:NAMES[nPlayers].slice(), tiles:{}, voids:Array.from({length:nPlayers},()=>[]),
-           draws:Array(nPlayers).fill(0), log:[], mode:'mine', cur:1, autoNext:true };
+function fresh(setN=6, nPlayers=4, hand=7, keep={}) {
+  return Object.assign({ setN, nPlayers, hand, names:NAMES[nPlayers].slice(), tiles:{}, voids:Array.from({length:nPlayers},()=>[]),
+    draws:Array(nPlayers).fill(0), log:[], recent:[], cur:1, track:false, dark:false }, keep);
 }
 let S; try { S = JSON.parse(localStorage.getItem(STORE)); } catch(e) {}
 if (!S || !S.tiles) S = fresh();
 let hist = [];
 const save = () => localStorage.setItem(STORE, JSON.stringify(S));
 function mutate(fn) { hist.push(JSON.stringify(S)); if (hist.length>300) hist.shift(); fn(); save(); render(); }
-function undo() { if (!hist.length) return; S = JSON.parse(hist.pop()); save(); render(); }
+function undo() { if (!hist.length) return; S = JSON.parse(hist.pop()); save(); render(); setStatus('Undone.'); }
 const nextP = i => (i+1) % S.nPlayers;
 const pname = i => i<0 ? '?' : S.names[i];
 
@@ -156,7 +173,7 @@ const pname = i => i<0 ? '?' : S.names[i];
 const LAY = {0:[],1:[[1,1]],2:[[0,0],[2,2]],3:[[0,0],[1,1],[2,2]],4:[[0,0],[2,0],[0,2],[2,2]],5:[[0,0],[2,0],[0,2],[2,2],[1,1]],
   6:[[0,0],[2,0],[0,1],[2,1],[0,2],[2,2]],7:[[0,0],[2,0],[0,1],[2,1],[0,2],[2,2],[1,1]],8:[[0,0],[1,0],[2,0],[0,1],[2,1],[0,2],[1,2],[2,2]],
   9:[[0,0],[1,0],[2,0],[0,1],[1,1],[2,1],[0,2],[1,2],[2,2]]};
-function pipLayout(n) { // 10–12 use a 4x3 grid
+function pipLayout(n) {
   if (n<=9) return LAY[n].map(([x,y])=>[0.25+x*0.25, 0.25+y*0.25]);
   const pts=[]; for (let y=0;y<4;y++) for (let x=0;x<3;x++) pts.push([0.22+x*0.28, 0.17+y*0.22]);
   const drop = {10:[4,7],11:[7],12:[]}[n]; return pts.filter((_,i)=>!drop.includes(i));
@@ -172,118 +189,108 @@ function dominoSVG(a,b) {
 function compute() {
   const N=S.setN, all=allTiles(N), unknown=[], mine=[], played=[];
   for (const t of all) { const st=S.tiles[key(...t)]; if (!st) unknown.push(t); else if (st.s==='mine') mine.push(t); else played.push([...t, st.by]); }
-  const playedBy = Array(S.nPlayers).fill(0);
-  played.forEach(p => { if (p[2]>=0) playedBy[p[2]]++; });
-  const unknownPlays = played.filter(p=>p[2]<0).length;
-  const opps=[]; let K=0;
-  for (let i=1;i<S.nPlayers;i++) {
-    const k = Math.max(0, S.hand + S.draws[i] - playedBy[i]); K += k;
-    const v = S.voids[i];
-    const cand = unknown.filter(t=>!v.includes(t[0]) && !v.includes(t[1]));
-    const cp = cand.map(pipsOf).sort((x,y)=>x-y);
-    opps.push({ i, k, v, cand, min:cp.slice(0,k).reduce((s,x)=>s+x,0), max:cp.slice(cp.length-k).reduce((s,x)=>s+x,0), bad:cand.length<k });
-  }
-  const unknownPips = sumP(unknown);
-  const boneyard = unknown.length - K;
+  const nOpp = S.nPlayers-1;
+  const oppPlays = played.filter(p=>p[2]!==0).length;              // anything not played by me came from an opponent
+  const oppDraws = S.draws.slice(1).reduce((s,x)=>s+x,0);
+  const K = Math.max(0, nOpp*S.hand + oppDraws - oppPlays);        // tiles in opponents' hands
+  const unknownPips = sumP(unknown), boneyard = unknown.length - K;
   const up = unknown.map(pipsOf).sort((x,y)=>x-y);
   let cMin, cMax;
   if (boneyard<=0) cMin = cMax = unknownPips;
   else { cMin = up.slice(0,K).reduce((s,x)=>s+x,0); cMax = up.slice(up.length-K).reduce((s,x)=>s+x,0); }
-  if (boneyard===0 && opps.length>1) { // hands together are exactly the unseen tiles: tighten each range
-    for (const o of opps) {
-      const oMax = opps.filter(x=>x!==o).reduce((s,x)=>s+x.max,0), oMin = opps.filter(x=>x!==o).reduce((s,x)=>s+x.min,0);
-      o.min = Math.max(o.min, unknownPips - oMax); o.max = Math.min(o.max, unknownPips - oMin);
+  const opps=[];
+  if (S.track) {
+    const playedBy = Array(S.nPlayers).fill(0); played.forEach(p=>{ if (p[2]>=0) playedBy[p[2]]++; });
+    for (let i=1;i<S.nPlayers;i++) {
+      const k = Math.max(0, S.hand + S.draws[i] - playedBy[i]), v = S.voids[i];
+      const cand = unknown.filter(t=>!v.includes(t[0]) && !v.includes(t[1]));
+      const cp = cand.map(pipsOf).sort((x,y)=>x-y);
+      opps.push({ i, k, v, cand, min:cp.slice(0,k).reduce((s,x)=>s+x,0), max:cp.slice(cp.length-k).reduce((s,x)=>s+x,0), bad:cand.length<k });
+    }
+    if (boneyard===0 && opps.length>1) for (const o of opps) {
+      const others = opps.filter(x=>x!==o);
+      o.min = Math.max(o.min, unknownPips - others.reduce((s,x)=>s+x.max,0));
+      o.max = Math.min(o.max, unknownPips - others.reduce((s,x)=>s+x.min,0));
     }
   }
-  const myExpected = S.hand + S.draws[0] - playedBy[0];
   const perNum = [];
   for (let n=0;n<=N;n++) perNum.push({ n, unseen: unknown.filter(t=>t[0]===n||t[1]===n).length, mine: mine.filter(t=>t[0]===n||t[1]===n).length });
-  return { all, unknown, mine, played, opps, unknownPips, boneyard, cMin, cMax, K, myExpected, perNum, unknownPlays, totalPips:sumP(all) };
+  return { all, unknown, mine, played, opps, unknownPips, boneyard, cMin, cMax, K, perNum };
 }
 
 /* ---------- rendering ---------- */
 function render() {
   const C = compute();
-  $('#setSel').value = S.setN; $('#plSel').value = S.nPlayers;
-  const hs = $('#handSel'); hs.innerHTML = '';
-  for (let h=3; h<=Math.min(21, Math.floor(C.all.length/S.nPlayers)); h++) hs.add(new Option(h+' per hand', h));
-  hs.value = S.hand;
+  $('#bigNum').textContent = C.cMin===C.cMax ? C.cMin : `${C.cMin}–${C.cMax}`;
+  $('#countLbl').textContent = C.cMin===C.cMax ? 'Opponents hold (pips)' : 'Opponents hold (pips, range)';
+  $('#countSub').innerHTML = `<b>${C.K}</b> tiles in their hands<br><b>${Math.max(0,C.boneyard)}</b> in the boneyard · <b>${C.unknownPips}</b> pips unseen<br>My hand: <b>${sumP(C.mine)}</b> pips (${C.mine.length} tiles)`
+    + (C.boneyard<0 ? `<br><span class="warn">Too many tiles marked. Check the grid or the settings.</span>` : '');
 
-  const combined = C.cMin===C.cMax ? `${C.cMin}` : `${C.cMin}–${C.cMax}`;
-  $('#stats').innerHTML = `
-    <div class="stat"><div class="lbl">Opponents hold ${C.boneyard<=0?'(exact)':'(range)'}</div><div class="big">${combined}</div><div class="muted">pips in ${C.K} tiles</div></div>
-    <div class="stat"><div class="lbl">All unseen pips</div><div class="val">${C.unknownPips}</div><div class="muted">${C.unknown.length} tiles not seen</div></div>
-    <div class="stat"><div class="lbl">Boneyard</div><div class="val">${Math.max(0,C.boneyard)}</div><div class="muted">tiles left to draw</div></div>
-    <div class="stat"><div class="lbl">My hand</div><div class="val">${sumP(C.mine)}</div><div class="muted">${C.mine.length} tiles${C.mine.length!==C.myExpected?` <span class="warn">(expected ${C.myExpected})</span>`:''}</div></div>`
-    + (C.boneyard<0 ? `<div class="stat warn">More tiles in opponents' hands than unseen tiles. Check hand size, draws or marked tiles.</div>` : '')
-    + (C.unknownPlays ? `<div class="stat muted">${C.unknownPlays} played tile(s) have no player assigned (“?”), so the per-player counts may be too high.</div>` : '');
-
-  $('#players').innerHTML = S.names.map((nm,i) => {
-    if (i===0) return `<div class="player ${S.cur===0?'cur':''}"><div class="name" data-rename="0">${nm} ✎</div>
-      <div class="muted">${C.mine.length} tiles · ${sumP(C.mine)} pips · drew ${S.draws[0]}</div>
-      <div class="row" style="margin-top:6px"><button class="small" data-pass="0">Pass</button><button class="small" data-draw="0">Drew +1</button></div></div>`;
-    const o = C.opps[i-1];
-    const range = o.min===o.max ? `${o.min}` : `${o.min}–${o.max}`;
-    const exact = !o.bad && o.cand.length===o.k && o.k>0 ? `<div class="muted">Must hold: ${o.cand.map(t=>fmt(...t)).join(', ')}</div>` : '';
-    return `<div class="player ${S.cur===i?'cur':''}"><div class="name" data-rename="${i}">${nm} ✎</div>
-      <div><span class="pips">${range}</span> <span class="muted">pips · ${o.k} tiles</span></div>
-      <div>${o.v.length? 'No: '+o.v.slice().sort((a,b)=>a-b).map(n=>`<span class="void">${n}</span>`).join('') : '<span class="muted">No passes yet</span>'}</div>
-      ${exact}${o.bad?'<div class="warn">Not enough possible tiles. Check the passes and marks.</div>':''}
-      <div class="row" style="margin-top:6px"><button class="small" data-pass="${i}">Pass</button><button class="small" data-draw="${i}">Drew +1</button>
-      ${S.draws[i]?`<span class="muted">drew ${S.draws[i]}</span>`:''}</div></div>`;
-  }).join('');
-
-  $('#modeBar').innerHTML = [['mine','🫵 My hand'],['played','✅ Played'],['erase','⌫ Unmark']].map(([m,l])=>`<button data-mode="${m}" class="${S.mode===m?'on':''}">${l}</button>`).join('')
-    + `<label class="chk"><input type="checkbox" id="autoNext" ${S.autoNext?'checked':''}> next player after a play</label>`;
-  $('#whoBar').style.display = S.mode==='played' ? '' : 'none';
-  $('#whoBar').innerHTML = '<span class="muted">Played by:</span>' + S.names.map((n,i)=>`<button class="small ${S.cur===i?'on':''}" data-who="${i}">${n}</button>`).join('')
-    + `<button class="small ${S.cur===-1?'on':''}" data-who="-1" title="Unknown player">?</button>`;
+  $('#chips').innerHTML = S.recent.slice(-12).reverse().map(r=>`<span class="chip ${r.s}">${r.s==='mine'?'✋':'✅'} ${fmt(r.k)}<button data-rm="${r.k}" title="Remove">✕</button></span>`).join('');
 
   const N=S.setN, g=$('#grid');
   g.style.gridTemplateColumns = `repeat(${N+1}, minmax(0,1fr))`;
-  g.innerHTML = C.all.map(([a,b]) => {
-    const st = S.tiles[key(a,b)];
-    const cls = st ? st.s : '';
-    const badge = st && st.s==='played' ? `<span class="badge">${pname(st.by)[0]}</span>` : '';
-    return `<button class="tile ${cls}" style="grid-row:${a+1};grid-column:${b+1}" data-t="${a},${b}" title="${fmt(a,b)}">${dominoSVG(a,b)}${badge}</button>`;
+  g.innerHTML = C.all.map(([a,b]) => { const st=S.tiles[key(a,b)];
+    return `<button class="tile ${st?st.s:''}" style="grid-row:${a+1};grid-column:${b+1}" data-t="${key(a,b)}" title="${a}|${b}">${dominoSVG(a,b)}</button>`; }).join('');
+
+  $('#trackChk').checked = S.track;
+  $('#players').innerHTML = !S.track ? '' : S.names.map((nm,i) => {
+    const btns = `<div class="row" style="margin-top:6px"><button class="small" data-turn="${i}">Their turn</button><button class="small" data-pass="${i}">Pass</button><button class="small" data-draw="${i}">Drew +1</button></div>`;
+    if (i===0) return `<div class="player ${S.cur===0?'cur':''}"><div class="name" data-rename="0">${nm} ✎</div><div class="muted">${C.mine.length} tiles · ${sumP(C.mine)} pips</div>${btns}</div>`;
+    const o = C.opps[i-1], range = o.min===o.max ? o.min : `${o.min}–${o.max}`;
+    return `<div class="player ${S.cur===i?'cur':''}"><div class="name" data-rename="${i}">${nm} ✎</div>
+      <div><span class="pips">${range}</span> <span class="muted">pips · ${o.k} tiles</span></div>
+      <div>${o.v.length ? 'Has no: '+o.v.slice().sort((a,b)=>a-b).map(n=>`<span class="void">${n}</span>`).join('') : '<span class="muted">No passes yet</span>'}</div>
+      ${!o.bad && o.k>0 && o.cand.length===o.k ? `<div class="muted">Must hold: ${o.cand.map(t=>t.join('|')).join(', ')}</div>` : ''}
+      ${o.bad ? '<div class="warn">Not enough possible tiles. Check the passes.</div>' : ''}${btns}</div>`;
   }).join('');
 
-  $('#nums').innerHTML = C.perNum.map(p=>`<div class="num ${p.unseen?'':'zero'}"><span class="muted">${p.n}s</span><b>${p.unseen}</b><span class="muted">I have ${p.mine}</span></div>`).join('');
-  $('#log').innerHTML = S.log.slice().reverse().slice(0,60).map(l=>`<li>${l}</li>`).join('');
-  renderResults();
+  $('#nums').innerHTML = C.perNum.map(p=>`<div class="num ${p.unseen?'':'zero'}"><span class="muted">${p.n}s</span><b>${p.unseen}</b><span class="muted">mine ${p.mine}</span></div>`).join('');
+  $('#log').innerHTML = S.log.slice().reverse().slice(0,80).map(l=>`<li>${l}</li>`).join('');
+
+  $('#setSel').value=S.setN; $('#plSel').value=S.nPlayers; $('#darkChk').checked=S.dark;
+  const hs=$('#handSel'); hs.innerHTML='';
+  for (let h=3; h<=Math.floor(C.all.length/S.nPlayers); h++) hs.add(new Option(h, h));
+  hs.value=S.hand;
+  updateButtons();
 }
 
-function markTile(a,b, mode=S.mode, quiet=false) {
-  const k = key(a,b), st = S.tiles[k];
-  if (mode==='erase') { delete S.tiles[k]; return; }
-  if (mode==='mine') {
-    if (st && st.s==='mine' && !quiet) delete S.tiles[k]; else S.tiles[k] = {s:'mine'};
-    return;
+// state changes (call inside mutate)
+function addTile(k, s, by) {
+  if (s==='mine') { S.tiles[k]={s:'mine'}; S.log.push(`My hand: ${fmt(k)}`); }
+  else {
+    if (by===undefined) by = S.track ? S.cur : -1;
+    S.tiles[k]={s:'played', by}; S.log.push(`${by>=0?pname(by):'Someone'} played ${fmt(k)}`);
+    if (S.track && by>=0) S.cur = nextP(by);
   }
-  if (st && st.s==='played' && !quiet) { delete S.tiles[k]; return; }
-  S.tiles[k] = {s:'played', by:S.cur};
-  S.log.push(`${pname(S.cur)} played ${fmt(a,b)}`);
-  if (S.autoNext && S.cur>=0) S.cur = nextP(S.cur);
+  S.recent.push({k, s}); if (S.recent.length>30) S.recent.shift();
 }
+function removeTile(k) { delete S.tiles[k]; S.recent = S.recent.filter(r=>r.k!==k); S.log.push(`Removed ${fmt(k)}`); }
 
 /* ---------- events ---------- */
 document.addEventListener('click', e => {
-  const t = e.target.closest('[data-t],[data-mode],[data-who],[data-pass],[data-draw],[data-rename]');
+  const t = e.target.closest('[data-t],[data-rm],[data-pass],[data-draw],[data-rename],[data-turn]');
   if (!t) return;
-  if (t.dataset.t) { const [a,b]=t.dataset.t.split(',').map(Number); mutate(()=>markTile(a,b)); }
-  else if (t.dataset.mode) mutate(()=>{ S.mode=t.dataset.mode; });
-  else if (t.dataset.who) mutate(()=>{ S.cur=+t.dataset.who; });
-  else if (t.dataset.draw) { const i=+t.dataset.draw; mutate(()=>{ S.draws[i]++; S.log.push(`${pname(i)} drew a tile`); }); }
-  else if (t.dataset.pass) openPass(+t.dataset.pass);
-  else if (t.dataset.rename) { const i=+t.dataset.rename; const n=prompt('Player name', S.names[i]); if (n&&n.trim()) mutate(()=>{ S.names[i]=n.trim().slice(0,16); }); }
+  const d = t.dataset;
+  if (d.t) { const k=d.t, st=S.tiles[k];
+    mutate(()=>{ if (!st) addTile(k,'played'); else if (st.s==='played') { delete S.tiles[k]; addTile(k,'mine'); } else removeTile(k); }); }
+  else if (d.rm) mutate(()=>removeTile(d.rm));
+  else if (d.turn) mutate(()=>{ S.cur=+d.turn; });
+  else if (d.draw) { const i=+d.draw; mutate(()=>{ S.draws[i]++; S.log.push(`${pname(i)} drew a tile`); }); }
+  else if (d.pass) openPass(+d.pass);
+  else if (d.rename) { const i=+d.rename, n=prompt('Player name', S.names[i]); if (n&&n.trim()) mutate(()=>{ S.names[i]=n.trim().slice(0,16); }); }
 });
-document.addEventListener('change', e => { if (e.target.id==='autoNext') mutate(()=>{ S.autoNext=e.target.checked; }); });
 $('#undoBtn').onclick = undo;
-$('#newBtn').onclick = () => { if (confirm('Start a new round? All marks are cleared (names and settings are kept).')) mutate(()=>{ const n=S.names; S=Object.assign(fresh(S.setN,S.nPlayers,S.hand),{names:n,autoNext:S.autoNext}); }); };
+$('#setBtn').onclick = () => $('#setDlg').showModal();
+$('#trackChk').onchange = e => mutate(()=>{ S.track=e.target.checked; });
+$('#darkChk').onchange = e => mutate(()=>{ S.dark=e.target.checked; });
+const keepPrefs = () => ({ names:S.names, track:S.track, dark:S.dark });
+$('#newBtn').onclick = () => { if (confirm('Start a new round? All tiles are cleared.')) { mutate(()=>{ S=fresh(S.setN,S.nPlayers,S.hand,keepPrefs()); }); votes=[]; $('#setDlg').close(); setStatus('New round. Read your hand first.'); } };
 function reconfigure(setN, nP, hand) {
   if (Object.keys(S.tiles).length && !confirm('Changing this starts a new round. Continue?')) { render(); return; }
   const max = Math.floor(allTiles(setN).length/nP);
-  mutate(()=>{ S = fresh(setN, nP, Math.min(hand, max)); });
+  const keep = { track:S.track, dark:S.dark }; if (nP===S.nPlayers) keep.names=S.names;
+  mutate(()=>{ S = fresh(setN, nP, Math.min(hand, max), keep); });
 }
 $('#setSel').onchange = e => { const n=+e.target.value; reconfigure(n, S.nPlayers, n===6?7:n===9?(S.nPlayers===4?10:12):(S.nPlayers===4?15:12)); };
 $('#plSel').onchange = e => reconfigure(S.setN, +e.target.value, S.hand);
@@ -291,145 +298,157 @@ $('#handSel').onchange = e => mutate(()=>{ S.hand=+e.target.value; });
 
 let passPlayer=0, passSel=new Set();
 function openPass(i) {
-  passPlayer=i; passSel=new Set();
-  $('#passTitle').textContent = `${pname(i)} passed`;
+  passPlayer=i; passSel=new Set(); $('#passTitle').textContent = `${pname(i)} passed`;
   const box=$('#passNums'); box.innerHTML='';
   for (let n=0;n<=S.setN;n++) { const b=document.createElement('button'); b.type='button'; b.textContent=n; b.onclick=()=>{ passSel.has(n)?passSel.delete(n):passSel.add(n); b.classList.toggle('on'); }; box.appendChild(b); }
   $('#passDlg').showModal();
 }
 $('#passDlg').addEventListener('close', () => {
   if ($('#passDlg').returnValue!=='ok') return;
-  mutate(()=>{
-    const v=S.voids[passPlayer]; passSel.forEach(n=>{ if(!v.includes(n)) v.push(n); });
-    S.log.push(`${pname(passPlayer)} passed${passSel.size?' on '+[...passSel].sort((a,b)=>a-b).join(', '):''}`);
-    if (S.autoNext) S.cur = nextP(passPlayer);
-  });
+  mutate(()=>{ const v=S.voids[passPlayer]; passSel.forEach(n=>{ if(!v.includes(n)) v.push(n); });
+    S.log.push(`${pname(passPlayer)} passed${passSel.size?' on '+[...passSel].sort((a,b)=>a-b).join(', '):''}`); S.cur=nextP(passPlayer); });
 });
 
-/* ---------- scanner ---------- */
+/* ---------- camera / screen / photo ---------- */
 const view=$('#view'), vctx=view.getContext('2d');
-let stream=null, video=null, src=null, frozen=null, isScreen=false;
-let roi={x:0.03,y:0.03,w:0.94,h:0.94}, results=[], drag=null, autoTimer=null;
-const srcW = () => src ? (src.videoWidth||src.naturalWidth||src.width) : 0;
-const srcH = () => src ? (src.videoHeight||src.naturalHeight||src.height) : 0;
-
-function stopStream() { if (stream) stream.getTracks().forEach(t=>t.stop()); stream=null; if (video) { video.remove(); video=null; } src=null; frozen=null; setAuto(false); }
-async function startStream(getter, screen) {
-  try {
-    stopStream();
-    stream = await getter();
-    video = document.createElement('video');
-    video.playsInline = true; video.muted = true; video.setAttribute('playsinline','');
-    video.style.cssText='position:fixed;width:1px;height:1px;opacity:0;pointer-events:none';
-    document.body.appendChild(video);
-    video.srcObject = stream; await video.play();
-    src = video; isScreen = screen; results=[]; renderResults();
-    stream.getVideoTracks()[0].addEventListener('ended', ()=>{ stopStream(); });
-  } catch (err) { alert('Could not start: '+err.message); }
+let stream=null, video=null, src=null, isLive=false;
+let roi={x:0,y:0,w:1,h:1}, drag=null, lastDet=[], busy=false;
+let watching=false, watchTimer=null, votes=[];
+const VOTE_N=4, VOTE_NEED=3;              // a tile must be seen in 3 of the last 4 scans before it counts
+const srcW = () => src ? (src.videoWidth||src.naturalWidth||0) : 0;
+const srcH = () => src ? (src.videoHeight||src.naturalHeight||0) : 0;
+let statusTimer;
+function setStatus(html, hot=false) { const el=$('#status'); el.innerHTML=html; el.classList.toggle('hot',hot); clearTimeout(statusTimer); if (hot) statusTimer=setTimeout(()=>el.classList.remove('hot'),1500); }
+function updateButtons() {
+  const has = !!srcW();
+  $('#handBtn').disabled = !has || busy; $('#watchBtn').disabled = !has;
+  $('#watchBtn').classList.toggle('on', watching);
+  $('#watchBtn').textContent = !isLive && has ? '✅ 2. Add photo as played' : watching ? '⏸ Watching… (tap to stop)' : '👁 2. Watch table';
 }
-$('#camBtn').onclick = () => startStream(()=>navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false}), false);
+
+function stopAll() { setWatch(false); if (stream) stream.getTracks().forEach(t=>t.stop()); stream=null; if (video) { video.remove(); video=null; } src=null; isLive=false; lastDet=[]; updateButtons(); }
+async function startStream(getter) {
+  try {
+    stopAll();
+    stream = await getter();
+    video = document.createElement('video'); video.playsInline=true; video.muted=true; video.setAttribute('playsinline','');
+    video.style.cssText='position:fixed;width:1px;height:1px;opacity:0;pointer-events:none';
+    document.body.appendChild(video); video.srcObject=stream; await video.play();
+    src=video; isLive=true;
+    stream.getVideoTracks()[0].addEventListener('ended', stopAll);
+    const wait = () => srcW() ? (updateButtons(), setStatus(Object.keys(S.tiles).length ? 'Ready. Tap <b>Watch table</b> to keep counting.' : 'Point the camera at <b>your hand</b> and tap <b>Read my hand</b>.')) : setTimeout(wait,100);
+    wait();
+  } catch (err) { setStatus('Could not start: '+err.message); }
+}
+$('#camBtn').onclick = () => startStream(()=>navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false}));
 $('#scrBtn').onclick = () => {
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) { alert('This browser cannot share the screen (phones usually cannot). Use Camera or Photo instead, or open the app on a computer.'); return; }
-  startStream(()=>navigator.mediaDevices.getDisplayMedia({video:{frameRate:5},audio:false}), true);
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) { setStatus('This browser can\'t share the screen (phones can\'t). Use Camera, or open the app on a computer.'); return; }
+  startStream(()=>navigator.mediaDevices.getDisplayMedia({video:{frameRate:10},audio:false}));
 };
 $('#upBtn').onclick = () => $('#file').click();
-$('#file').onchange = e => {
-  const f=e.target.files[0]; if (!f) return;
-  const img=new Image(); img.onload=()=>{ stopStream(); src=img; isScreen=false; results=[]; scan(); }; img.src=URL.createObjectURL(f);
-  e.target.value='';
-};
-$('#stopBtn').onclick = () => { stopStream(); results=[]; renderResults(); };
-$('#fullBtn').onclick = () => { roi={x:0,y:0,w:1,h:1}; };
-$('#resumeBtn').onclick = () => { frozen=null; results=[]; renderResults(); };
-$('#scanBtn').onclick = () => scan();
-$('#autoChk').onchange = e => setAuto(e.target.checked);
-function setAuto(on) {
-  $('#autoChk').checked = on; clearInterval(autoTimer); autoTimer=null;
-  if (on) autoTimer = setInterval(()=>{ if (src && src.videoWidth) scan(true); }, 2000);
+$('#file').onchange = e => { const f=e.target.files[0]; if (!f) return;
+  const img=new Image(); img.onload=()=>{ stopAll(); src=img; isLive=false; lastDet=scanFrame(); updateButtons();
+    setStatus(`Found ${lastDet.filter(t=>t.ok).length} tile(s) in the photo. Add them as <b>my hand</b> or as <b>played</b>.`); };
+  img.src=URL.createObjectURL(f); e.target.value=''; };
+$('#stopBtn').onclick = stopAll;
+
+// optional box: drag to limit the area; single tap resets to full frame
+function viewToNorm(e) { const r=view.getBoundingClientRect(); return { x:Math.min(1,Math.max(0,(e.clientX-r.left)/r.width)), y:Math.min(1,Math.max(0,(e.clientY-r.top)/r.height)) }; }
+view.addEventListener('pointerdown', e => { if (!srcW()) return; view.setPointerCapture(e.pointerId); drag={p:viewToNorm(e), moved:false}; });
+view.addEventListener('pointermove', e => { if (!drag) return; const p=viewToNorm(e), q=drag.p;
+  const r={x:Math.min(q.x,p.x), y:Math.min(q.y,p.y), w:Math.abs(p.x-q.x), h:Math.abs(p.y-q.y)};
+  if (r.w>0.05 && r.h>0.05) { roi=r; drag.moved=true; votes=[]; } });
+view.addEventListener('pointerup', () => { if (drag && !drag.moved) { roi={x:0,y:0,w:1,h:1}; votes=[]; } drag=null; if (!isLive && src) lastDet=scanFrame(); });
+
+// run the detector on the current frame (inside the box); returns tiles with normalised coords
+function scanFrame() {
+  const W=srcW(), H=srcH(); if (!W||!H) return [];
+  const sx=roi.x*W, sy=roi.y*H, sw=roi.w*W, sh=roi.h*H;
+  const scale=Math.min(1, 1100/Math.max(sw,sh));
+  const ow=Math.max(8,Math.round(sw*scale)), oh=Math.max(8,Math.round(sh*scale));
+  scanFrame.c = scanFrame.c || document.createElement('canvas');
+  const oc=scanFrame.c; oc.width=ow; oc.height=oh;
+  const octx=oc.getContext('2d',{willReadFrequently:true}); octx.drawImage(src, sx,sy,sw,sh, 0,0,ow,oh);
+  const tiles = DominoDetect.detect(octx.getImageData(0,0,ow,oh).data, ow, oh, {maxPip:S.setN, darkTiles:S.dark});
+  const nx = x => roi.x + x/ow*roi.w, ny = y => roi.y + y/oh*roi.h;
+  return tiles.map(t=>({ k:key(t.a,t.b), ok:t.ok, corners:t.corners.map(([x,y])=>[nx(x),ny(y)]), pips:t.pips.map(p=>[nx(p.x),ny(p.y)]) }));
 }
 
-function viewToNorm(e) { const r=view.getBoundingClientRect(); return { x:Math.min(1,Math.max(0,(e.clientX-r.left)/r.width)), y:Math.min(1,Math.max(0,(e.clientY-r.top)/r.height)) }; }
-view.addEventListener('pointerdown', e => { if (!src) return; view.setPointerCapture(e.pointerId); drag=viewToNorm(e); });
-view.addEventListener('pointermove', e => { if (!drag) return; const p=viewToNorm(e);
-  const r={x:Math.min(drag.x,p.x), y:Math.min(drag.y,p.y), w:Math.abs(p.x-drag.x), h:Math.abs(p.y-drag.y)};
-  if (r.w>0.03 && r.h>0.03) { roi=r; frozen=null; results=[]; } });
-view.addEventListener('pointerup', () => { if (drag && results.length===0) renderResults(); drag=null; });
+function setWatch(on) {
+  watching=on; clearTimeout(watchTimer); votes=[];
+  if (on) { setStatus('Watching the table. New tiles are added when they show up clearly.'); watchTick(); }
+  updateButtons();
+}
+function watchTick() {
+  if (!watching) return;
+  if (isLive && !busy) {
+    lastDet = scanFrame();
+    votes.push(new Set(lastDet.filter(t=>t.ok).map(t=>t.k))); if (votes.length>VOTE_N) votes.shift();
+    const cnt={}; votes.forEach(s=>s.forEach(k=>cnt[k]=(cnt[k]||0)+1));
+    const fresh = Object.keys(cnt).filter(k=>cnt[k]>=VOTE_NEED && !S.tiles[k]);
+    if (fresh.length) { mutate(()=>fresh.forEach(k=>addTile(k,'played'))); setStatus('Counted '+fresh.map(fmt).join(', '), true); if (navigator.vibrate) navigator.vibrate(40); }
+  }
+  watchTimer = setTimeout(watchTick, 500);
+}
+$('#watchBtn').onclick = () => {
+  if (!isLive) { // photo: one shot
+    const fresh=[...new Set(lastDet.filter(t=>t.ok && !S.tiles[t.k]).map(t=>t.k))];
+    if (fresh.length) mutate(()=>fresh.forEach(k=>addTile(k,'played')));
+    setStatus(fresh.length ? 'Added as played: '+fresh.map(fmt).join(', ') : 'No new tiles in this photo.', !!fresh.length); return;
+  }
+  setWatch(!watching);
+};
+$('#handBtn').onclick = async () => {
+  let found;
+  if (!isLive) found = [...new Set(lastDet.filter(t=>t.ok).map(t=>t.k))];
+  else { // take 5 quick readings and keep what shows up in most of them
+    const wasWatching = watching; setWatch(false); busy=true; updateButtons(); setStatus('Reading your hand… hold still');
+    const cnt={};
+    for (let i=0;i<5;i++) { lastDet=scanFrame(); new Set(lastDet.filter(t=>t.ok).map(t=>t.k)).forEach(k=>cnt[k]=(cnt[k]||0)+1); await new Promise(r=>setTimeout(r,250)); }
+    busy=false; found = Object.keys(cnt).filter(k=>cnt[k]>=3);
+    if (wasWatching) setWatch(true);
+  }
+  const fresh = found.filter(k=>!S.tiles[k] || S.tiles[k].s!=='mine');
+  if (fresh.length) mutate(()=>fresh.forEach(k=>addTile(k,'mine')));
+  const total = Object.values(S.tiles).filter(t=>t.s==='mine').length;
+  setStatus(fresh.length ? `Added to my hand: ${fresh.map(fmt).join(', ')}. ${total}/${S.hand} tiles. ${total<S.hand?'Show the rest and tap again, or':'Now'} point at the table and tap <b>Watch table</b>.`
+                         : 'No tiles found. Hold the tiles flat, face up, with good light, and try again.', !!fresh.length);
+  updateButtons();
+};
 
+// draw video + detections
 function loop() {
-  const W=srcW(), H=srcH();
-  const cw = Math.round(view.clientWidth * (window.devicePixelRatio||1));
+  const W=srcW(), H=srcH(), cw=Math.round(view.clientWidth*(window.devicePixelRatio||1));
   if (W && H && cw) {
-    const ch = Math.round(cw*H/W);
+    const ch=Math.round(cw*H/W);
     if (view.width!==cw || view.height!==ch) { view.width=cw; view.height=ch; }
-    vctx.drawImage(frozen || src, 0, 0, cw, ch);
-    // dim outside the ROI
-    vctx.fillStyle='rgba(0,0,0,.45)';
-    const rx=roi.x*cw, ry=roi.y*ch, rw=roi.w*cw, rh=roi.h*ch;
-    vctx.fillRect(0,0,cw,ry); vctx.fillRect(0,ry+rh,cw,ch-ry-rh); vctx.fillRect(0,ry,rx,rh); vctx.fillRect(rx+rw,ry,cw-rx-rw,rh);
-    vctx.strokeStyle='#f2c14e'; vctx.lineWidth=2; vctx.setLineDash([8,6]); vctx.strokeRect(rx,ry,rw,rh); vctx.setLineDash([]);
-    const fs = Math.max(14, cw/40);
-    results.forEach((t,i)=>{
-      const x=t.nx*cw, y=t.ny*ch, w=t.nw*cw, h=t.nh*ch;
-      vctx.strokeStyle = t.dup ? '#888' : '#5aa9e6'; vctx.lineWidth=3; vctx.strokeRect(x,y,w,h);
-      vctx.font=`bold ${fs}px system-ui`; const label=`${i+1}: ${fmt(t.a,t.b)}`;
-      vctx.fillStyle='rgba(0,0,0,.75)'; vctx.fillRect(x, y-fs-4, vctx.measureText(label).width+8, fs+4);
-      vctx.fillStyle='#fff'; vctx.fillText(label, x+4, y-5);
-      vctx.fillStyle='#e5674f'; (t.pips||[]).forEach(p=>{ vctx.beginPath(); vctx.arc(p.nx*cw, p.ny*ch, Math.max(3,cw/220), 0, 7); vctx.fill(); });
-    });
+    vctx.drawImage(src,0,0,cw,ch);
+    if (roi.w<1 || roi.h<1) {
+      const rx=roi.x*cw, ry=roi.y*ch, rw=roi.w*cw, rh=roi.h*ch;
+      vctx.fillStyle='rgba(0,0,0,.45)';
+      vctx.fillRect(0,0,cw,ry); vctx.fillRect(0,ry+rh,cw,ch-ry-rh); vctx.fillRect(0,ry,rx,rh); vctx.fillRect(rx+rw,ry,cw-rx-rw,rh);
+      vctx.strokeStyle='#f2c14e'; vctx.lineWidth=2; vctx.setLineDash([8,6]); vctx.strokeRect(rx,ry,rw,rh); vctx.setLineDash([]);
+    }
+    const fs=Math.max(13,cw/45);
+    vctx.font=`bold ${fs}px system-ui`;
+    for (const t of lastDet) {
+      const st=S.tiles[t.k], col = !t.ok ? '#e5674f' : st ? (st.s==='mine' ? '#5aa9e6' : '#5fd38d') : '#f2c14e';
+      vctx.strokeStyle=col; vctx.lineWidth=3; vctx.beginPath();
+      t.corners.forEach(([x,y],i)=> i ? vctx.lineTo(x*cw,y*ch) : vctx.moveTo(x*cw,y*ch)); vctx.closePath(); vctx.stroke();
+      vctx.fillStyle='#e5674f'; t.pips.forEach(([x,y])=>{ vctx.beginPath(); vctx.arc(x*cw,y*ch,Math.max(2.5,cw/260),0,7); vctx.fill(); });
+      const lx=Math.min(...t.corners.map(c=>c[0]))*cw, ly=Math.min(...t.corners.map(c=>c[1]))*ch, label=t.ok?fmt(t.k):'?';
+      vctx.fillStyle='rgba(0,0,0,.7)'; vctx.fillRect(lx, ly-fs-4, vctx.measureText(label).width+8, fs+4);
+      vctx.fillStyle=col; vctx.fillText(label, lx+4, ly-5);
+    }
   } else {
-    if (view.width!==640) { view.width=640; view.height=360; }
+    if (view.width!==640) { view.width=640; view.height=300; }
     vctx.fillStyle='#000'; vctx.fillRect(0,0,view.width,view.height);
     vctx.fillStyle='#a9c2b6'; vctx.font='18px system-ui'; vctx.textAlign='center';
-    vctx.fillText('No input yet: tap Camera, Screen or Photo', view.width/2, view.height/2); vctx.textAlign='start';
+    vctx.fillText('Tap Camera to start', view.width/2, view.height/2); vctx.textAlign='start';
   }
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
-
-function scan(auto=false) {
-  const W=srcW(), H=srcH(); if (!W||!H) { if(!auto) alert('Start the camera, share a screen or load a photo first.'); return; }
-  // snapshot the full frame so the overlay lines up with what was scanned
-  const snap=document.createElement('canvas'); snap.width=W; snap.height=H; snap.getContext('2d').drawImage(src,0,0);
-  const sx=roi.x*W, sy=roi.y*H, sw=roi.w*W, sh=roi.h*H;
-  const scale=Math.min(1, 1000/Math.max(sw,sh));
-  const ow=Math.max(8,Math.round(sw*scale)), oh=Math.max(8,Math.round(sh*scale));
-  const oc=document.createElement('canvas'); oc.width=ow; oc.height=oh;
-  const octx=oc.getContext('2d',{willReadFrequently:true}); octx.drawImage(snap, sx,sy,sw,sh, 0,0,ow,oh);
-  const tiles = DominoDetect.detect(octx.getImageData(0,0,ow,oh).data, ow, oh, {maxPip:S.setN, darkTiles:$('#darkChk').checked});
-  const toNx = px => roi.x + px/ow*roi.w, toNy = py => roi.y + py/oh*roi.h;
-  const found = tiles.map(t=>({ a:t.a, b:t.b, nx:toNx(t.rect.x0), ny:toNy(t.rect.y0), nw:(t.rect.x1-t.rect.x0+1)/ow*roi.w, nh:(t.rect.y1-t.rect.y0+1)/oh*roi.h,
-    pips:t.pips.map(p=>({nx:toNx(p.x), ny:toNy(p.y)})) }));
-  if (auto && results.length) return; // don't overwrite results the user is still reviewing
-  if (auto) { // screen auto-scan: only interrupt when something new shows up
-    const fresh = found.filter(t=>!S.tiles[key(t.a,t.b)] && !(t.a===0&&t.b===0&&tiles.fallback));
-    if (!fresh.length) return;
-  }
-  frozen = snap; results = found;
-  $('#scanHint').innerHTML = tiles.fallback
-    ? 'No separate tiles found, so the whole box was read as <b>one tile</b>. For best results drag the box tightly around a single tile.'
-    : `Found <b>${found.length}</b> tile(s). Fix any wrong numbers below, then add them.`;
-  renderResults();
-}
-
-function renderResults() {
-  results.forEach(t=>t.dup=!!S.tiles[key(t.a,t.b)]);
-  const box=$('#results'), bar=$('#resultBar');
-  if (!results.length) { box.innerHTML=''; bar.innerHTML=''; return; }
-  const modeLbl = S.mode==='mine' ? 'to my hand' : S.mode==='played' ? `as played by ${pname(S.cur)}` : '(choose My hand or Played above)';
-  bar.innerHTML = `<button class="on" id="addAll" ${S.mode==='erase'?'disabled':''}>Add all new ${modeLbl}</button><button id="clearRes">Discard</button>`;
-  const opts = v => Array.from({length:S.setN+1},(_,n)=>`<option ${n===v?'selected':''}>${n}</option>`).join('');
-  box.innerHTML = results.map((t,i)=>`<div class="res ${t.dup?'dup':''}"><b>${i+1}</b>${dominoSVG(t.a,t.b)}
-    <select data-ra="${i}">${opts(t.a)}</select><select data-rb="${i}">${opts(t.b)}</select>
-    <span class="muted">${t.dup?'already marked':''}</span>
-    <button class="small" data-add="${i}" ${S.mode==='erase'?'disabled':''}>Add</button><button class="small" data-del="${i}">✕</button></div>`).join('');
-  $('#addAll').onclick = () => { const todo=results.filter(t=>!t.dup); if(!todo.length) return;
-    mutate(()=>{ todo.forEach(t=>markTile(t.a,t.b,S.mode,true)); }); results=[]; frozen=null; renderResults(); };
-  $('#clearRes').onclick = () => { results=[]; frozen=null; renderResults(); };
-  box.querySelectorAll('[data-ra],[data-rb]').forEach(s=>s.onchange=()=>{ const i=+(s.dataset.ra??s.dataset.rb); results[i][s.dataset.ra!=null?'a':'b']=+s.value; renderResults(); });
-  box.querySelectorAll('[data-add]').forEach(b=>b.onclick=()=>{ const i=+b.dataset.add, t=results[i]; mutate(()=>markTile(t.a,t.b,S.mode,true)); results.splice(i,1); if(!results.length) frozen=null; renderResults(); });
-  box.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{ results.splice(+b.dataset.del,1); if(!results.length) frozen=null; renderResults(); });
-}
-
 render();
 </script>
 </body>

@@ -1,6 +1,9 @@
-/* Domino tile + pip detector. Pure JS, no dependencies.
- * detect(rgba, w, h, {maxPip, darkTiles}) -> [{a, b, rect:{x0,y0,x1,y1}, pips:[{x,y}]}]
- * Works best with light tiles / dark pips on a darker table (toggle darkTiles for black dominoes).
+/* Domino tile + pip detector (v2). Pure JS, no dependencies.
+ * detect(rgba, w, h, {maxPip, darkTiles, fallback}) ->
+ *   [{a, b, ok, corners:[[x,y]x4], pips:[{x,y}]}]   (tiles.fallback = true when the whole image was read as one tile)
+ * - finds tiles at any rotation (principal-axis fit), splits straight chains of touching tiles
+ * - thresholds pips per tile against that tile's own white level (handles uneven light)
+ * - keeps only round blobs of a consistent size, fully inside the tile (ignores shadows, divider, centre pin)
  */
 (function (root) {
   function toGray(rgba, w, h, invert) {
@@ -12,42 +15,32 @@
     return g;
   }
 
-  // Otsu threshold over a rectangle; returns threshold plus the two class means.
-  function otsu(g, w, x0, y0, x1, y1) {
+  function otsu(g) {
     const hist = new Float64Array(256);
-    let n = 0;
-    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { hist[g[y * w + x]]++; n++; }
-    let sum = 0;
-    for (let i = 0; i < 256; i++) sum += i * hist[i];
-    let sumB = 0, wB = 0, best = -1, t = 127, m0 = 0, m1 = 255;
+    for (let i = 0; i < g.length; i++) hist[g[i]]++;
+    const n = g.length;
+    let sum = 0; for (let i = 0; i < 256; i++) sum += i * hist[i];
+    let sumB = 0, wB = 0, best = -1, t = 127;
     for (let i = 0; i < 256; i++) {
-      wB += hist[i];
-      if (!wB) continue;
-      const wF = n - wB;
-      if (!wF) break;
+      wB += hist[i]; if (!wB) continue;
+      const wF = n - wB; if (!wF) break;
       sumB += i * hist[i];
-      const mB = sumB / wB, mF = (sum - sumB) / wF;
-      const between = wB * wF * (mB - mF) * (mB - mF);
-      if (between > best) { best = between; t = i; m0 = mB; m1 = mF; }
+      const d = sumB / wB - (sum - sumB) / wF;
+      const between = wB * wF * d * d;
+      if (between > best) { best = between; t = i; }
     }
-    return { t, m0, m1 };
+    return t;
   }
 
-  // 4-connected component labelling of a 0/1 mask.
+  // 4-connected labelling. Returns {lab, comps}; comps[id-1] has area + bbox.
   function label(mask, w, h) {
-    const lab = new Int32Array(w * h);
-    const comps = [];
-    const stack = new Int32Array(w * h);
-    for (let start = 0; start < mask.length; start++) {
-      if (!mask[start] || lab[start]) continue;
-      const id = comps.length + 1;
-      const c = { area: 0, minx: w, miny: h, maxx: 0, maxy: 0, sx: 0, sy: 0 };
-      let sp = 0;
-      stack[sp++] = start;
-      lab[start] = id;
+    const lab = new Int32Array(w * h), comps = [], stack = new Int32Array(w * h);
+    for (let s = 0; s < mask.length; s++) {
+      if (!mask[s] || lab[s]) continue;
+      const id = comps.length + 1, c = { id, area: 0, minx: w, miny: h, maxx: 0, maxy: 0, sx: 0, sy: 0 };
+      let sp = 0; stack[sp++] = s; lab[s] = id;
       while (sp) {
-        const p = stack[--sp];
-        const x = p % w, y = (p - x) / w;
+        const p = stack[--sp], x = p % w, y = (p - x) / w;
         c.area++; c.sx += x; c.sy += y;
         if (x < c.minx) c.minx = x; if (x > c.maxx) c.maxx = x;
         if (y < c.miny) c.miny = y; if (y > c.maxy) c.maxy = y;
@@ -58,18 +51,16 @@
       }
       comps.push(c);
     }
-    return comps;
+    return { lab, comps };
   }
 
-  // Square max-filter (dilation) of a mask; closes thin dark divider lines and pips.
   function dilate(mask, w, h, r) {
-    if (r < 1) return mask;
     const tmp = new Uint8Array(w * h), out = new Uint8Array(w * h);
     for (let y = 0; y < h; y++) {
-      let last = -1e9;
-      for (let x = 0; x < w; x++) { if (mask[y * w + x]) last = x; if (x - last <= r) tmp[y * w + x] = 1; }
+      const o = y * w; let last = -1e9;
+      for (let x = 0; x < w; x++) { if (mask[o + x]) last = x; if (x - last <= r) tmp[o + x] = 1; }
       last = 1e9;
-      for (let x = w - 1; x >= 0; x--) { if (mask[y * w + x]) last = x; if (last - x <= r) tmp[y * w + x] = 1; }
+      for (let x = w - 1; x >= 0; x--) { if (mask[o + x]) last = x; if (last - x <= r) tmp[o + x] = 1; }
     }
     for (let x = 0; x < w; x++) {
       let last = -1e9;
@@ -80,85 +71,119 @@
     return out;
   }
 
-  function findTileRects(g, w, h) {
-    const { t } = otsu(g, w, 0, 0, w - 1, h - 1);
-    let mask = new Uint8Array(w * h);
-    for (let i = 0; i < mask.length; i++) mask[i] = g[i] > t ? 1 : 0;
-    const r = Math.max(1, Math.round(Math.min(w, h) / 160));
-    mask = dilate(mask, w, h, r);
-    const rects = [];
-    for (const c of label(mask, w, h)) {
-      const x0 = Math.min(w - 1, c.minx + r), y0 = Math.min(h - 1, c.miny + r);
-      const x1 = Math.max(x0, c.maxx - r), y1 = Math.max(y0, c.maxy - r);
-      const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
-      if (c.area < w * h * 0.003 || bw * bh > w * h * 0.97) continue;
-      const L = Math.max(bw, bh), S = Math.min(bw, bh);
-      if (S < 10) continue;
-      const fill = c.area / ((c.maxx - c.minx + 1) * (c.maxy - c.miny + 1));
-      if (fill < 0.6) continue;
-      const ratio = L / S;
-      const n = Math.max(1, Math.round(ratio / 2));
-      if (ratio < 1.5 || Math.abs(ratio / n - 2) > 0.45) continue;
-      // a straight chain of touching tiles -> split it evenly
-      for (let k = 0; k < n; k++) {
-        if (bw >= bh) {
-          const step = bw / n;
-          rects.push({ x0: Math.round(x0 + k * step), y0, x1: Math.round(x0 + (k + 1) * step) - 1, y1 });
-        } else {
-          const step = bh / n;
-          rects.push({ x0, y0: Math.round(y0 + k * step), x1, y1: Math.round(y0 + (k + 1) * step) - 1 });
-        }
+  // Fit an oriented rectangle to each bright blob; keep the ones shaped like 1..n tiles in a row.
+  function findTiles(g, w, h) {
+    const t = otsu(g);
+    const light = new Uint8Array(w * h);
+    for (let i = 0; i < light.length; i++) light[i] = g[i] > t ? 1 : 0;
+    const r = Math.max(1, Math.round(Math.min(w, h) / 220));
+    const { lab, comps } = label(dilate(light, w, h, r), w, h);
+    const geos = [];
+    for (const c of comps) {
+      const bw = c.maxx - c.minx + 1, bh = c.maxy - c.miny + 1;
+      if (c.area < w * h * 0.0015 || bw * bh > w * h * 0.9) continue;
+      const mx = c.sx / c.area, my = c.sy / c.area;
+      let xx = 0, yy = 0, xy = 0;
+      for (let y = c.miny; y <= c.maxy; y++) for (let x = c.minx; x <= c.maxx; x++) {
+        if (lab[y * w + x] !== c.id) continue;
+        const dx = x - mx, dy = y - my; xx += dx * dx; yy += dy * dy; xy += dx * dy;
       }
+      const th = 0.5 * Math.atan2(2 * xy, xx - yy);
+      const ux = Math.cos(th), uy = Math.sin(th), vx = -uy, vy = ux;
+      let t0 = 1e9, t1 = -1e9, s0 = 1e9, s1 = -1e9;
+      for (let y = c.miny; y <= c.maxy; y++) for (let x = c.minx; x <= c.maxx; x++) {
+        if (lab[y * w + x] !== c.id) continue;
+        const dx = x - mx, dy = y - my, pt = dx * ux + dy * uy, ps = dx * vx + dy * vy;
+        if (pt < t0) t0 = pt; if (pt > t1) t1 = pt; if (ps < s0) s0 = ps; if (ps > s1) s1 = ps;
+      }
+      const fill = c.area / ((t1 - t0 + 1) * (s1 - s0 + 1));
+      if (fill < 0.72) continue;                      // not a solid rectangle
+      const L = t1 - t0 + 1 - 2 * r, W = s1 - s0 + 1 - 2 * r;
+      if (W < 12) continue;
+      const ratio = L / W, n = Math.max(1, Math.round(ratio / 2));
+      if (ratio < 1.55 || Math.abs(ratio / n - 2) > 0.4) continue;
+      const tc = (t0 + t1) / 2, sc = (s0 + s1) / 2;
+      geos.push({ cx: mx + tc * ux + sc * vx, cy: my + tc * uy + sc * vy, ux, uy, L, W, n });
     }
-    return rects;
+    return geos;
   }
 
-  function readTile(g, w, rc, maxPip) {
-    const bw = rc.x1 - rc.x0 + 1, bh = rc.y1 - rc.y0 + 1;
-    const horiz = bw >= bh;
-    const S = Math.min(bw, bh);
-    const inset = Math.max(1, Math.round(S * 0.05));
-    const x0 = rc.x0 + inset, y0 = rc.y0 + inset, x1 = rc.x1 - inset, y1 = rc.y1 - inset;
-    const rw = x1 - x0 + 1, rh = y1 - y0 + 1;
-    const res = { a: 0, b: 0, rect: rc, pips: [], horiz };
-    if (rw < 6 || rh < 6) return res;
-    const { t, m0, m1 } = otsu(g, w, x0, y0, x1, y1);
-    if (m1 - m0 < 35) return res; // blank tile (0|0) – no contrast
-    const mask = new Uint8Array(rw * rh);
-    for (let y = 0; y < rh; y++) for (let x = 0; x < rw; x++) mask[y * rw + x] = g[(y + y0) * w + x + x0] < t ? 1 : 0;
-    const counts = [0, 0];
-    for (const c of label(mask, rw, rh)) {
-      const d = 2 * Math.sqrt(c.area / Math.PI);
-      if (d < S * 0.06 || d > S * 0.33) continue;
-      const cw = c.maxx - c.minx + 1, ch = c.maxy - c.miny + 1;
-      const asp = cw / ch;
-      if (asp < 0.5 || asp > 2) continue;
-      if (c.area / (cw * ch) < 0.45) continue;
-      if (c.minx === 0 || c.miny === 0 || c.maxx === rw - 1 || c.maxy === rh - 1) continue; // edge shadow
-      const cx = c.sx / c.area + x0, cy = c.sy / c.area + y0;
-      const along = horiz ? (cx - rc.x0) / bw : (cy - rc.y0) / bh;
-      if (Math.abs(along - 0.5) < 0.05) continue; // centre brad / spinner pin
-      counts[along < 0.5 ? 0 : 1]++;
-      res.pips.push({ x: cx, y: cy });
+  function readGeo(g, w, h, geo, maxPip) {
+    const { cx, cy, ux, uy, L, W, n } = geo, vx = -uy, vy = ux;
+    const hl = L / 2, hw = W / 2;
+    const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => [cx + a * hl * ux + b * hw * vx, cy + a * hl * uy + b * hw * vy]);
+    const x0 = Math.max(0, Math.floor(Math.min(...corners.map(p => p[0])))), x1 = Math.min(w - 1, Math.ceil(Math.max(...corners.map(p => p[0]))));
+    const y0 = Math.max(0, Math.floor(Math.min(...corners.map(p => p[1])))), y1 = Math.min(h - 1, Math.ceil(Math.max(...corners.map(p => p[1]))));
+    const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
+    const mT = hl - W * 0.04, mS = hw - W * 0.05;   // shrink a little: ignore the tile's rim
+    const inR = new Uint8Array(bw * bh), hist = new Uint32Array(256);
+    let cnt = 0;
+    for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
+      const dx = x + x0 - cx, dy = y + y0 - cy;
+      if (Math.abs(dx * ux + dy * uy) <= mT && Math.abs(dx * vx + dy * vy) <= mS) { inR[y * bw + x] = 1; hist[g[(y + y0) * w + x + x0]]++; cnt++; }
     }
-    res.a = Math.min(maxPip, counts[0]);
-    res.b = Math.min(maxPip, counts[1]);
-    return res;
+    const pct = q => { let acc = 0; for (let i = 0; i < 256; i++) { acc += hist[i]; if (acc >= q * cnt) return i; } return 255; };
+    const white = pct(0.7), dark = pct(0.01);
+    const segs = Array.from({ length: n }, () => [0, 0]);
+    const tiles = segs.map((_, k) => ({ k, pips: [] }));
+    if (cnt && white - dark >= 45) {
+      const thr = dark + (white - dark) * 0.5;
+      const cand = new Uint8Array(bw * bh);
+      for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) { const i = y * bw + x; cand[i] = inR[i] && g[(y + y0) * w + x + x0] < thr ? 1 : 0; }
+      const { lab, comps } = label(cand, bw, bh);
+      const edge = new Uint8Array(comps.length + 1);
+      for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
+        const i = y * bw + x, id = lab[i]; if (!id) continue;
+        if (x === 0 || y === 0 || x === bw - 1 || y === bh - 1 || !inR[i - 1] || !inR[i + 1] || !inR[i - bw] || !inR[i + bw]) edge[id] = 1;
+      }
+      let blobs = [];
+      for (const c of comps) {
+        if (edge[c.id]) continue;                                    // touches the rim -> shadow / edge
+        const d = 2 * Math.sqrt(c.area / Math.PI);
+        if (d < W * 0.06 || d > W * 0.3 || c.area < 4) continue;
+        const cw = c.maxx - c.minx + 1, ch = c.maxy - c.miny + 1;
+        if (cw / ch < 0.5 || cw / ch > 2 || c.area / (cw * ch) < 0.5) continue; // not round (divider, scratches)
+        blobs.push({ area: c.area, x: c.sx / c.area + x0, y: c.sy / c.area + y0 });
+      }
+      if (blobs.length > 2) {                                        // pips on one set are all the same size
+        const med = blobs.map(b => b.area).sort((p, q) => p - q)[blobs.length >> 1];
+        blobs = blobs.filter(b => b.area > med * 0.4 && b.area < med * 2.5);
+      }
+      const segL = L / n;
+      for (const b of blobs) {
+        const pos = (b.x - cx) * ux + (b.y - cy) * uy + hl;
+        const k = Math.min(n - 1, Math.max(0, Math.floor(pos / segL)));
+        const within = pos - k * segL;
+        if (Math.abs(within - segL / 2) < segL * 0.05) continue;      // centre pin / spinner
+        segs[k][within < segL / 2 ? 0 : 1]++;
+        tiles[k].pips.push({ x: b.x, y: b.y });
+      }
+    }
+    return tiles.map(({ k, pips }) => {
+      const a0 = -hl + k * L / n, a1 = a0 + L / n;
+      const cs = [[a0, -hw], [a1, -hw], [a1, hw], [a0, hw]].map(([p, q]) => [cx + p * ux + q * vx, cy + p * uy + q * vy]);
+      const [a, b] = segs[k];
+      return { a, b, ok: a <= maxPip && b <= maxPip, corners: cs, pips };
+    });
   }
 
   function detect(rgba, w, h, opt) {
     opt = opt || {};
     const maxPip = opt.maxPip == null ? 6 : opt.maxPip;
     const g = toGray(rgba, w, h, !!opt.darkTiles);
-    let rects = findTileRects(g, w, h);
-    let fallback = false;
-    if (!rects.length) { rects = [{ x0: 0, y0: 0, x1: w - 1, y1: h - 1 }]; fallback = true; }
-    const tiles = rects.map(rc => readTile(g, w, rc, maxPip));
+    let geos = findTiles(g, w, h), fallback = false;
+    if (!geos.length && opt.fallback) {
+      const horiz = w >= h;
+      geos = [{ cx: w / 2, cy: h / 2, ux: horiz ? 1 : 0, uy: horiz ? 0 : 1, L: Math.max(w, h), W: Math.min(w, h), n: 1 }];
+      fallback = true;
+    }
+    const tiles = [];
+    for (const geo of geos) tiles.push(...readGeo(g, w, h, geo, maxPip));
     tiles.fallback = fallback;
     return tiles;
   }
 
-  const api = { detect, toGray, otsu, label };
+  const api = { detect };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.DominoDetect = api;
 })(this);
