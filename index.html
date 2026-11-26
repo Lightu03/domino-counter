@@ -254,6 +254,9 @@ function boardEnds() {
   played.forEach(k=>{ const [a,b]=unkey(k); cnt[a]++; cnt[b]++; });
   const odd = cnt.map((c,i)=>c%2?i:-1).filter(i=>i>=0);
   if (odd.length===2) return { ends:odd, sure:true, n:played.length };
+  // both ends show the same number: counting can't tell which, but the layout on screen can
+  if (S.geoEnds && odd.length===0 && S.geoEnds.keys && S.geoEnds.keys.length===played.length && S.geoEnds.keys.every(k=>played.includes(k)))
+    return { ends:S.geoEnds.ends, sure:true, n:played.length };
   // both ends equal (or a misread tile): replay the plays in order
   let ends=null, i0=0, bad=false;
   if (S.endsFix && S.endsFix.at<played.length) { ends=S.endsFix.ends.slice(); i0=S.endsFix.at; }
@@ -540,7 +543,8 @@ function scanFrame() {
   else scanFrame.max = Math.min(1800, (scanFrame.max||1280) + 160);   // nothing found: look closer next time
   return tiles.map(t=>{ const cs=t.corners.map(([x,y])=>[x/ow,y/oh]);
     const ys=cs.map(c=>c[1]);
-    return { k:key(t.a,t.b), corners:cs, cx:cs.reduce((s,c)=>s+c[0],0)/4, cy:cs.reduce((s,c)=>s+c[1],0)/4, hN:Math.max(...ys)-Math.min(...ys), pips:t.pips.map(p=>[p.x/ow,p.y/oh]) }; });
+    const C=t.corners, mid=(p,q)=>[(p[0]+q[0])/2,(p[1]+q[1])/2], ctr=mid(mid(C[0],C[2]),mid(C[1],C[3])), eA=mid(C[0],C[3]), eB=mid(C[1],C[2]);
+    return { k:key(t.a,t.b), ha:t.a, hb:t.b, pa:mid(eA,ctr), pb:mid(eB,ctr), Lpx:Math.hypot(eA[0]-eB[0],eA[1]-eB[1]), corners:cs, cx:cs.reduce((s,c)=>s+c[0],0)/4, cy:cs.reduce((s,c)=>s+c[1],0)/4, hN:Math.max(...ys)-Math.min(...ys), pips:t.pips.map(p=>[p.x/ow,p.y/oh]) }; });
 }
 
 function setWatch(on) {
@@ -578,6 +582,13 @@ function mirrorScreen(tc, hc) {
   if (!board.length && !hand.length) return;                     // nothing visible (tab hidden?): keep state
   const oldPlayed = Object.keys(S.tiles).filter(k=>cur(k)==='played'), oldMine = Object.keys(S.tiles).filter(k=>cur(k)==='mine');
   const same = (a,b) => a.length===b.length && a.every(k=>b.includes(k));
+  // read the open ends from the layout when this frame shows exactly the board we have
+  const hsNow = handSet(lastDet), boardDet = lastDet.filter(t=>!hsNow.has(t));
+  if (same(boardDet.map(t=>t.k), board)) {
+    const ge = geoEnds(boardDet);
+    const prevGe = S.geoEnds && S.geoEnds.ends ? S.geoEnds.ends.join() : '';
+    if (ge && (ge.join() !== prevGe || !same(S.geoEnds.keys||[], board))) { S.geoEnds = { ends:ge, keys:board.slice() }; if (same(board, oldPlayed) && same(hand, oldMine)) { save(); render(); } }
+  }
   if (same(board, oldPlayed) && same(hand, oldMine)) return;
   const newRound = !board.length && oldPlayed.length >= 2;
   mutate(()=>{
@@ -599,6 +610,20 @@ function mirrorScreen(tc, hc) {
     S.tiles = tiles; S.seen = hand.slice(); S.recent = S.recent.slice(-30);
     if (added.length) { setStatus((newRound?'New round. ':'')+added.join('  '), true); if (navigator.vibrate) navigator.vibrate(40); }
   });
+}
+
+function geoEnds(ts) {
+  if (!ts.length) return null;
+  if (ts.length===1) return [ts[0].ha, ts[0].hb];
+  const deg = ts.map(()=>0), joined = ts.map(()=>null);
+  for (let i=0;i<ts.length;i++) for (let j=i+1;j<ts.length;j++) {
+    const A=ts[i], B=ts[j], L=Math.max(A.Lpx,B.Lpx), d=(p,q)=>Math.hypot(p[0]-q[0],p[1]-q[1]);
+    const opts=[[d(A.pa,B.pa),'a','a'],[d(A.pa,B.pb),'a','b'],[d(A.pb,B.pa),'b','a'],[d(A.pb,B.pb),'b','b']].sort((x,y)=>x[0]-y[0]);
+    if (opts[0][0] < 0.7*L) { deg[i]++; deg[j]++; joined[i]=opts[0][1]; joined[j]=opts[0][2]; }
+  }
+  const endIdx = deg.map((v,i)=>v===1?i:-1).filter(i=>i>=0);
+  if (endIdx.length!==2 || deg.some(v=>v===0 || v>2)) return null;      // not a simple line (spinner, gap, misread)
+  return endIdx.map(i=>{ const t=ts[i]; return joined[i]==='a' ? t.hb : t.ha; });
 }
 
 // Camera at a real table: only part of the game is visible, so tiles are added as they show up.

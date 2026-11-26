@@ -124,17 +124,33 @@
   }
 
   // split a blob of touching, axis-aligned tiles (e.g. a double laid across a line) into tiles
-  function decompose(lab, c, w) {
+  function extractLocal(lab, c, w) {
     const P = 3, bw = c.maxx - c.minx + 1, bh = c.maxy - c.miny + 1, LW = bw + 2 * P, LH = bh + 2 * P;
     const M = new Uint8Array(LW * LH);
     for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) if (lab[(y + c.miny) * w + x + c.minx] === c.id) M[(y + P) * LW + x + P] = 1;
-    // city-block distance transform -> tile width
+    return { M, P, LW, LH, minx: c.minx, miny: c.miny, area: c.area, key: c.minx + ',' + c.miny + ',' + bw + ',' + bh };
+  }
+
+  function decompose(loc, hint) {
+    const { M, P, LW, LH, area } = loc, c = { minx: loc.minx, miny: loc.miny, area };
+    // tile size: from clean single tiles in the same frame if we have them; otherwise the TYPICAL
+    // thickness of the blob (ridge of the distance transform). The widest point lies where a double
+    // crosses the line and would give a width twice too big.
     const D = new Int32Array(LW * LH);
     for (let i = 0; i < D.length; i++) D[i] = M[i] ? 1e6 : 0;
     for (let y = 1; y < LH; y++) for (let x = 1; x < LW; x++) { const i = y * LW + x; if (D[i]) D[i] = Math.min(D[i], D[i - 1] + 1, D[i - LW] + 1); }
-    let maxD = 0;
-    for (let y = LH - 2; y >= 0; y--) for (let x = LW - 2; x >= 0; x--) { const i = y * LW + x; if (D[i]) { D[i] = Math.min(D[i], D[i + 1] + 1, D[i + LW] + 1); if (D[i] > maxD) maxD = D[i]; } }
-    const W = 2 * maxD - 1, Lt = 2 * W;
+    for (let y = LH - 2; y >= 0; y--) for (let x = LW - 2; x >= 0; x--) { const i = y * LW + x; if (D[i]) D[i] = Math.min(D[i], D[i + 1] + 1, D[i + LW] + 1); }
+    let W, Lt;
+    if (hint) { W = Math.round(hint.W); Lt = Math.round(hint.L); }
+    else {
+      const ridge = [];
+      for (let y = 1; y < LH - 1; y++) for (let x = 1; x < LW - 1; x++) {
+        const i = y * LW + x, v = D[i];
+        if (v > 3 && v >= D[i - 1] && v >= D[i + 1] && v >= D[i - LW] && v >= D[i + LW]) ridge.push(v);
+      }
+      if (!ridge.length) return [];
+      W = 2 * median(ridge) - 1; Lt = 2 * W;
+    }
     if (W < 10 || c.area < 1.5 * W * Lt) return [];
     const out = [];
     const II = new Int32Array((LW + 1) * (LH + 1));
@@ -164,38 +180,46 @@
       let left = 0; for (let i = 0; i < M.length; i++) left += M[i];
       if (left < W * Lt * 0.5) break;
     }
+    // a real cluster of touching tiles is (almost) completely made of tiles; a panel or border is not
+    let left = 0; for (let i = 0; i < M.length; i++) left += M[i];
+    if (left > area * 0.15 || out.length < 2) return [];
     return out;
   }
 
-  function fromMask(mask, w, h, out) {
+  function fromMask(mask, w, h, out, deferred) {
     const r = 0, m = fillHoles(mask, w, h);
     const { lab, comps } = label(m, w, h);
     for (const c of comps) {
       if (c.area < 200 || c.area > w * h * 0.25) continue;
       const geo = rectFit(lab, c, w, r);
       if (geo) out.push(geo);
-      else if (c.area > 600) out.push(...decompose(lab, c, w));
+      else if (c.area > 600) { const loc = extractLocal(lab, c, w); if (!deferred.has(loc.key)) deferred.set(loc.key, loc); }
     }
   }
 
   function findTiles(rgba, w, h, screen) {
-    const n = w * h, g = lum(rgba, n), o = otsu(g), cands = [];
+    const n = w * h, g = lum(rgba, n), o = otsu(g), cands = [], deferred = new Map();
     // screen captures have flat colours: the palette masks do the work, one brightness cut is enough
-    const thrs = screen ? [o.t] : [o.t, o.t + (o.m1 - o.t) * 0.4, o.t + (o.m1 - o.t) * 0.75, o.t - (o.t - o.m0) * 0.4, o.t - (o.t - o.m0) * 0.75];
+    const thrs = screen ? [o.t, o.t + (o.m1 - o.t) * 0.75] : [o.t, o.t + (o.m1 - o.t) * 0.4, o.t + (o.m1 - o.t) * 0.75, o.t - (o.t - o.m0) * 0.4, o.t - (o.t - o.m0) * 0.75];
     for (const t of thrs) {
       const hi = new Uint8Array(n), lo = new Uint8Array(n);
       for (let i = 0; i < n; i++) { hi[i] = g[i] > t ? 1 : 0; lo[i] = 1 - hi[i]; }
-      fromMask(hi, w, h, cands); fromMask(lo, w, h, cands);
+      fromMask(hi, w, h, cands, deferred); fromMask(lo, w, h, cands, deferred);
     }
     for (const col of palette(rgba, n, 8)) {
       const m = new Uint8Array(n), tol2 = 32 * 32;
       for (let i = 0, j = 0; i < n; i++, j += 4) { const dr = rgba[j] - col[0], dg = rgba[j + 1] - col[1], db = rgba[j + 2] - col[2]; m[i] = dr * dr + dg * dg + db * db < tol2 ? 1 : 0; }
-      fromMask(m, w, h, cands);
+      fromMask(m, w, h, cands, deferred);
     }
+    // split blobs of touching tiles, using the size of clean single tiles seen in this frame
+    const singles = cands.filter(c => c.n === 1 && c.q > 0.85);
+    const hint = singles.length >= 2 ? { W: median(singles.map(c => c.W)), L: median(singles.map(c => c.L)) } : null;
+    for (const loc of deferred.values()) cands.push(...decompose(loc, hint));
     cands.sort((p, q) => q.q - p.q);
     const keep = [];
     for (const c of cands) {
-      if (keep.some(k => Math.hypot(k.cx - c.cx, k.cy - c.cy) < Math.min(k.L / k.n, c.L / c.n) * 0.45)) continue;
+      // only drop exact duplicates: outlines a pixel apart can read differently (glow, blur), so read them all
+      if (keep.some(k => k.n === c.n && Math.abs(k.cx - c.cx) < 0.5 && Math.abs(k.cy - c.cy) < 0.5 && Math.abs(k.L - c.L) < 0.5 && Math.abs(k.W - c.W) < 0.5)) continue;
       keep.push(c);
     }
     return keep;
@@ -330,8 +354,18 @@
       fallback = true;
     }
     const tiles = [];
-    for (const geo of geos) tiles.push(...readGeo(rgba, w, h, geo, maxPip));
-    let good = tiles.filter(t => t.ok);
+    for (const geo of geos) for (const t of readGeo(rgba, w, h, geo, maxPip)) {
+      t.q = geo.q || 0; t.segL = geo.L / geo.n;
+      t.cx = (t.corners[0][0] + t.corners[2][0]) / 2; t.cy = (t.corners[0][1] + t.corners[2][1]) / 2;
+      tiles.push(t);
+    }
+    tiles.sort((p, q) => (q.ok - p.ok) || (q.q - p.q));
+    const chosen = [];
+    for (const t of tiles) {
+      if (chosen.some(k => Math.hypot(k.cx - t.cx, k.cy - t.cy) < Math.min(k.segL, t.segL) * 0.45)) continue;
+      chosen.push(t);
+    }
+    let good = chosen.filter(t => t.ok);
     if (good.length >= 3) {
       const mw = median(good.map(t => t.W));
       good = good.filter(t => t.W > mw * 0.65 && t.W < mw * 1.5);
