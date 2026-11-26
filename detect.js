@@ -371,6 +371,8 @@
       good = good.filter(t => t.W > mw * 0.65 && t.W < mw * 1.5);
     }
     good.fallback = fallback;
+    // tile-shaped but unreadable (face-down tiles, among other things): the app counts the opponent's hand from these
+    good.unreadable = chosen.filter(t => !t.ok).map(t => ({ cx: t.cx, cy: t.cy, W: t.W }));
     return good;
   }
 

@@ -183,9 +183,9 @@ const sumP = arr => arr.reduce((s,t)=>s+pipsOf(t),0);
 const fmt = k => unkey(k).join('|');
 const has = (t,n) => t[0]===n || t[1]===n;
 
-function fresh(setN=6, nPlayers=4, hand=7, keep={}) {
+function fresh(setN=6, nPlayers=2, hand=7, keep={}) {
   return Object.assign({ setN, nPlayers, hand, names:NAMES[nPlayers].slice(), tiles:{}, order:[], seen:[], endsFix:null, voids:Array.from({length:nPlayers},()=>[]),
-    draws:Array(nPlayers).fill(0), log:[], recent:[], cur:1, track:false, tableOnly:true, stock:true }, keep);
+    draws:Array(nPlayers).fill(0), log:[], recent:[], cur:1, track:false, tableOnly:true, stock:true, oppCount:null }, keep);
 }
 let S; try { S = JSON.parse(localStorage.getItem(STORE)); } catch(e) {}
 if (!S || !S.tiles) S = fresh();
@@ -219,7 +219,7 @@ function compute() {
   const nOpp = S.nPlayers-1;
   const oppPlays = played.filter(p=>p[2]!==0).length;
   const oppDraws = S.draws.slice(1).reduce((s,x)=>s+x,0);
-  const K = Math.max(0, nOpp*S.hand + oppDraws - oppPlays);
+  const K = S.nPlayers===2 && S.oppCount!=null ? S.oppCount : Math.max(0, nOpp*S.hand + oppDraws - oppPlays);
   const unknownPips = sumP(unknown), boneyard = unknown.length - K;
   const up = unknown.map(pipsOf).sort((x,y)=>x-y);
   let cMin, cMax;
@@ -306,8 +306,15 @@ function bestMoves(C, E) {
       outs.push(rest.some(x=>fits(x, place(o, newEnds, i))) ? 1 : 0);
     }
     const follow = outs.length ? outs.reduce((s,x)=>s+x,0)/outs.length : (myNow?1:0);
-    let score = 100*pB*(myNow ? 1 : 0.4) + 40*(1-pB)*follow;
-    why.push(`opponent can't answer: <b>${pct(pB)}</b>`);
+    const stock = Math.max(0, C.boneyard), Mu = unseen.filter(x=>fits(x,newEnds)).length;
+    let blockV, blockTxt;
+    if (stock > 0) {   // if they hold none, every fitting tile is in the stock: expected draws to hit one
+      const Ed = Mu===0 ? stock : Math.min(stock, (stock+1)/(Mu+1));
+      blockV = 30 + 14*Ed + (Mu===0 ? 40 : 0);
+      blockTxt = Mu===0 ? 'they draw the whole stock ('+stock+') and pass' : 'they must draw ~'+Ed.toFixed(1)+' tile'+(Ed>=1.5?'s':'');
+    } else { blockV = 100; blockTxt = 'they must pass'; }
+    let score = pB*blockV*(myNow ? 1 : 0.6) + 40*(1-pB)*follow;
+    why.push(`opponent can't answer: <b>${pct(pB)}</b>${pB>=0.05 ? ' → '+blockTxt : ''}`);
     if (pB < 1) why.push(`if they answer, you can still play: ${pct(follow)}`);
     if (!myNow) why.push('⚠ you have nothing for these ends yourself');
     const usedVoids = [...new Set(newEnds)].filter(x=>voids.includes(x));
@@ -335,8 +342,10 @@ function bestMoves(C, E) {
     // Only lock when you clearly win the count.
     if (!unseen.some(x=>fits(x,newEnds)) && !myNow) {
       const mine = sumP(rest);
-      if (mine < C.cMin) { score = 500; why.unshift(`🔒 locks the game and you WIN on count (${mine} vs at least ${C.cMin})`); }
-      else { score = -500; why.unshift(`🔒 locks the game and you'd likely LOSE on count (you ${mine}, them ${C.cMin}${C.cMax!==C.cMin?'–'+C.cMax:''})`); }
+      const theirs = C.unknownPips;   // with a block they end up holding every unseen tile (they draw the stock)
+      if (mine < theirs) { score = 500; why.unshift(`🔒 blocks the game and you WIN on count (${mine} vs ${theirs})`); }
+      else if (mine === theirs) { score = 0; why.unshift(`🔒 blocks the game: tie on count (${mine}), stake refunded`); }
+      else { score = -500; why.unshift(`🔒 blocks the game and you LOSE on count (you ${mine}, them ${theirs})`); }
     }
     score += 0.001*pipsOf(t);                                   // tie-break only
     return { t, k:key(...t), endIdx, newEnds, score, why };
@@ -491,7 +500,7 @@ let roi=null, drag=null, lastDet=[], busy=false;            // roi = board box (
 let watching=false, watchTimer=null, votes=[];
 const VOTE_N=4, VOTE_NEED=3;              // camera: a tile must be seen in 3 of the last 4 scans before it counts
 const MIRROR_N=3;                         // screen: appears after 2 of the last 3 scans, disappears after missing all 3
-let scanMs=0, lastCounts='';
+let scanMs=0, lastCounts='', ocHist=[];
 const srcW = () => src ? (src.videoWidth||src.naturalWidth||0) : 0;
 const srcH = () => src ? (src.videoHeight||src.naturalHeight||0) : 0;
 let statusTimer;
@@ -579,10 +588,42 @@ function scanFrame() {
   if (tiles.length) { const ws=tiles.map(t=>t.W).sort((a,b)=>a-b), mw=ws[ws.length>>1];
     scanFrame.max = Math.round(Math.min(1800, Math.max(isScreen ? 1100 : 640, Math.max(ow,oh) * (isScreen ? 48 : 36) / mw))); }
   else scanFrame.max = Math.min(1800, (scanFrame.max||1280) + 160);   // nothing found: look closer next time
-  return tiles.map(t=>{ const cs=t.corners.map(([x,y])=>[x/ow,y/oh]);
+  const dets = tiles.map(t=>{ const cs=t.corners.map(([x,y])=>[x/ow,y/oh]);
     const ys=cs.map(c=>c[1]);
     const C=t.corners, mid=(p,q)=>[(p[0]+q[0])/2,(p[1]+q[1])/2], ctr=mid(mid(C[0],C[2]),mid(C[1],C[3])), eA=mid(C[0],C[3]), eB=mid(C[1],C[2]);
     return { k:key(t.a,t.b), ha:t.a, hb:t.b, pa:mid(eA,ctr), pb:mid(eB,ctr), Lpx:Math.hypot(eA[0]-eB[0],eA[1]-eB[1]), corners:cs, cx:cs.reduce((s,c)=>s+c[0],0)/4, cy:cs.reduce((s,c)=>s+c[1],0)/4, hN:Math.max(...ys)-Math.min(...ys), pips:t.pips.map(p=>[p.x/ow,p.y/oh]) }; });
+  dets.oppCount = isScreen ? countBacks(tiles, dets, oh) : null;
+  return dets;
+}
+
+// The opponent's face-down tiles: a row of same-size, unreadable tile shapes, spaced about one tile
+// apart, above the board. Their number = the opponent's hand. (null = can't tell, e.g. overlapping backs)
+function countBacks(tiles, dets, oh) {
+  const un = tiles.unreadable || [];
+  if (!tiles.length || !un.length) return null;
+  const ws = tiles.map(t=>t.W).sort((a,b)=>a-b), mw = ws[ws.length>>1];
+  const hs = handSet(dets), boardDets = dets.filter(t=>!hs.has(t));
+  const top = boardDets.length ? Math.min(...boardDets.map(t=>t.cy*oh)) - mw : oh*0.45;
+  const cand = un.filter(u=>u.W>mw*0.85 && u.W<mw*1.18 && u.cy < top).sort((a,b)=>a.cx-b.cx);
+  const rows = [];
+  for (const c of cand) { const r = rows.find(r=>Math.abs(r.cy-c.cy) < mw*0.25); if (r) r.items.push(c); else rows.push({cy:c.cy, items:[c]}); }
+  // real backs: identical size, evenly spaced about one tile apart, at least two in a row
+  let best = 0;
+  for (const r of rows) {
+    let run = [r.items[0]];
+    const check = () => {
+      if (run.length < 2) return;
+      const W0 = run.map(x=>x.W).sort((a,b)=>a-b)[run.length>>1];
+      const dxs = run.slice(1).map((x,i)=>x.cx-run[i].cx), d0 = dxs.slice().sort((a,b)=>a-b)[dxs.length>>1];
+      if (run.every(x=>Math.abs(x.W-W0) < W0*0.08) && dxs.every(d=>Math.abs(d-d0) < d0*0.15)) best = Math.max(best, run.length);
+    };
+    for (let i=1;i<r.items.length;i++) {
+      const dx = r.items[i].cx - r.items[i-1].cx;
+      if (dx > mw*1.05 && dx < mw*1.7) run.push(r.items[i]); else { check(); run = [r.items[i]]; }
+    }
+    check();
+  }
+  return best || null;
 }
 
 function setWatch(on) {
@@ -603,7 +644,9 @@ function watchTick() {
     if (autoSplit()) {
       const recent = votes.slice(-MIRROR_N), mt={}, mh={};
       recent.forEach(v=>{ v.table.forEach(k=>mt[k]=(mt[k]||0)+1); v.hand.forEach(k=>mh[k]=(mh[k]||0)+1); });
-      if (recent.length===MIRROR_N) mirrorScreen(mt, mh);
+      ocHist.push(lastDet.oppCount); if (ocHist.length>3) ocHist.shift();
+      const oc = ocHist.find(v=>v!=null && ocHist.filter(x=>x===v).length>=2) ?? null;
+      if (recent.length===MIRROR_N) mirrorScreen(mt, mh, oc);
     }
     else accumulate(tc, hc);
   } catch (err) { setStatus('Scan error (still watching): '+err.message); }
@@ -612,7 +655,7 @@ function watchTick() {
 
 // Online game: the whole board and my hand are always on screen, so the state simply MIRRORS the screen.
 // Nothing old can linger, and when the board empties a new round starts by itself.
-function mirrorScreen(tc, hc) {
+function mirrorScreen(tc, hc, oc) {
   const cur = k => S.tiles[k] && S.tiles[k].s;
   // hysteresis: a tile appears after being seen in 3 of 4 scans and disappears after missing 3 of 4
   const board = Object.keys(tc).filter(k => tc[k] >= (cur(k)==='played' ? 1 : 2));
@@ -627,13 +670,19 @@ function mirrorScreen(tc, hc) {
     const prevGe = S.geoEnds && S.geoEnds.ends ? S.geoEnds.ends.join() : '';
     if (ge && (ge.join() !== prevGe || !same(S.geoEnds.keys||[], board))) { S.geoEnds = { ends:ge, keys:board.slice() }; if (same(board, oldPlayed) && same(hand, oldMine)) { save(); render(); } }
   }
-  if (same(board, oldPlayed) && same(hand, oldMine)) return;
+  const ocChanged = oc!=null && oc!==S.oppCount;
+  if (same(board, oldPlayed) && same(hand, oldMine) && !ocChanged) return;
   const newRound = !board.length && oldPlayed.length >= 2;
-  const E0 = boardEnds();
+  const E0 = boardEnds(), C0 = compute();
   mutate(()=>{
     if (newRound) { const n=S.names; S = Object.assign(fresh(S.setN,S.nPlayers,S.hand,keepPrefs()), {names:n}); S.log.push('— New round —'); }
     const prev = S.tiles, tiles = {}, added = [];
     const newBoardCount = board.filter(k=>!prev[k] || prev[k].s!=='played').length;
+    // the opponent's face-down tiles went up => they drew because nothing fit the ends at that moment.
+    // Every tile they drew before the one they could play has none of those numbers, so they still have none.
+    const oppAdded = board.filter(k=>(!prev[k] || prev[k].s!=='played') && !(prev[k] && prev[k].s==='mine')).length;
+    const drew = (oc!=null && S.oppCount!=null && !newRound && E0.ends) ? (oc - S.oppCount) + oppAdded : 0;
+    if (drew > 0) { S.voids[1] = [...new Set(E0.ends)]; S.justDrew = true; S.log.push('Opponent drew '+drew+': they have no '+S.voids[1].join(' or ')); added.push('📥 opponent drew '+drew); }
     for (const k of board) {
       const p = prev[k];
       const by = p && p.s==='played' ? p.by : p && p.s==='mine' ? 0 : (S.track ? S.cur : -1);
@@ -641,16 +690,21 @@ function mirrorScreen(tc, hc) {
       if (!p || p.s!=='played') {
         // pass detection, carefully: only a clean single play of mine right after a clean single play of mine
         const single = newBoardCount === 1;
-        if (by===0 && S.lastBy===0 && S.lastSingle && single && S.nPlayers===2 && E0.ends && !newRound) {
+        // (with stock left the opponent would have drawn and played, so this only applies once the stock is empty)
+        if (by===0 && S.lastBy===0 && S.lastSingle && single && S.nPlayers===2 && E0.ends && !newRound && C0.boneyard<=0) {
           const v=S.voids[1]; E0.ends.forEach(x=>{ if(!v.includes(x)) v.push(x); });
           S.log.push('Opponent passed on '+[...new Set(E0.ends)].join(' & ')+' (they have none right now)');
         }
-        if (by!==0) {
+        if (by!==0 && S.justDrew) {
+          // the play that ends a draw is the tile they drew to answer: the rest of their hand still lacks those numbers
+          S.justDrew = false;
+        } else if (by!==0) {
           const v=S.voids[1]||[], tt=unkey(k);
           const wrong = v.filter(x=>tt.includes(x));
           if (wrong.length) S.log.push('Opponent played '+fmt(k)+': they did have '+wrong.join(' & '));
-          // with a stock they may have drawn since passing, so what they lacked no longer holds
-          S.voids[1] = S.stock===false ? v.filter(x=>!tt.includes(x)) : [];
+          // they played it, so they did have it. Without a count of their tiles we can't see draws, so in a
+          // stock game we forget the rest; with the count, draws are seen and handled below.
+          S.voids[1] = (S.stock===false || S.oppCount!=null) ? v.filter(x=>!tt.includes(x)) : [];
         }
         S.lastBy = by; S.lastSingle = single;
         added.push('✅'+fmt(k)); S.recent.push({k, s:'played'});
@@ -660,6 +714,9 @@ function mirrorScreen(tc, hc) {
     }
     for (const k of hand) { tiles[k] = { s:'mine' }; if (!prev[k] || prev[k].s!=='mine') { added.push('✋'+fmt(k)); S.recent.push({k, s:'mine'}); } }
     S.order = S.order.filter(k=>board.includes(k)).concat(board.filter(k=>!S.order.includes(k)));
+    // the opponent's face-down tiles went up => they drew because nothing fit the ends at that moment.
+    // Every tile they drew before the one they could play has none of those numbers, so they still have none.
+    if (oc!=null) S.oppCount = oc;
     if (!same(board, oldPlayed)) S.endsFix = null;   // a manual end fix only applies to the board it was made on
     S.tiles = tiles; S.seen = hand.slice(); S.recent = S.recent.slice(-30);
     if (added.length) { setStatus((newRound?'New round. ':'')+added.join('  '), true); if (navigator.vibrate) navigator.vibrate(40); }

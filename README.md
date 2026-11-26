@@ -11,18 +11,23 @@ Everything is then automatic: tiles inside the box are counted as played, tiles 
 
 A tile must show up the same way in 3 of 4 scans in a row before it counts. Tap ✕ on a chip to undo a wrong one, or tap any tile in the grid to fix it.
 
+## Rules it is built for
+2-player **Draw dominoes**: 28 tiles (double-six), 7 each, 14 in the stock. If you can't match, you draw until you can or the stock runs out. Going out wins. If the game is blocked, the lowest count wins, and a tie refunds the stake.
+
 ## Best move
-The best move is the play that gives your opponent the fewest answers. It is not about dumping pips. For every legal play the app works out:
-1. **Opponent can't answer:** the exact chance that the next opponent holds no tile for the new open ends. This uses every tile still unseen (their hand plus the boneyard), how many tiles they hold, and the numbers they are known not to have.
+The best move is the play that gives your opponent the fewest answers and keeps you playing. It is not about dumping pips. For every legal play the app works out:
+1. **Opponent can't answer → they must draw ~N tiles** (or pass when the stock is empty). This is the exact chance they hold nothing for the new ends, from every unseen tile, their tile count and the numbers they are known not to have. Each tile they are forced to draw is one more they must get rid of before they can go out.
 2. **If they answer, you can still play:** every answer they could give is checked against your remaining hand.
-3. **Locked games:** if nobody can play any more, it tells you whether you win or lose on the count.
-4. **Going out** always comes first.
+3. **Blocked games:** the opponent first draws the whole stock, then the lowest count wins. A block is only suggested when you win the count.
+4. **What strong players also weigh:** keeping variety (never giving up your last tile of a number), controlling numbers you hold many of, playing doubles before they get stuck, and shedding heavy tiles when the opponent is about to go out.
+5. **Going out** always comes first.
 
-Pips are only used to break exact ties.
+**Reading the opponent (online games):**
+- Their face-down tiles are counted, which gives their exact tile count and the stock size. This works when the backs sit side by side. Overlapping backs can't be counted, and then the app estimates.
+- When their count goes up, they drew because nothing fit the ends, so they hold none of those numbers. That stays true after they play the tile they drew to answer.
+- The panel shows "Opponent has no: …". Tap **clear** if it's ever wrong.
 
-**Passes are detected by themselves (2 players):** if you play twice in a row, your opponent couldn't answer, so they have none of those end numbers. The panel shows "Opponent has no: …" and uses it in every later suggestion. Tap **clear** if that is ever wrong.
-
-The two open ends are read by the app: from the numbers on the board, or from the layout when both ends show the same number. You can override them with the two drop-downs. Games with a spinner (four open ends) are not supported.
+The open ends are read from the numbers on the board, or from the layout when both ends show the same number. You can override them with the two drop-downs. Spinner games (four open ends) are not supported.
 
 ## Detection
 Colour-based: works with white, black or grey tiles and black, white or coloured pips, at any angle, including tiles touching each other on the board.
