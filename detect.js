@@ -140,18 +140,29 @@
     for (let i = 0; i < D.length; i++) D[i] = M[i] ? 1e6 : 0;
     for (let y = 1; y < LH; y++) for (let x = 1; x < LW; x++) { const i = y * LW + x; if (D[i]) D[i] = Math.min(D[i], D[i - 1] + 1, D[i - LW] + 1); }
     for (let y = LH - 2; y >= 0; y--) for (let x = LW - 2; x >= 0; x--) { const i = y * LW + x; if (D[i]) D[i] = Math.min(D[i], D[i + 1] + 1, D[i + LW] + 1); }
-    let W, Lt;
-    if (hint) { W = Math.round(hint.W); Lt = Math.round(hint.L); }
-    else {
-      const ridge = [];
-      for (let y = 1; y < LH - 1; y++) for (let x = 1; x < LW - 1; x++) {
-        const i = y * LW + x, v = D[i];
-        if (v > 3 && v >= D[i - 1] && v >= D[i + 1] && v >= D[i - LW] && v >= D[i + LW]) ridge.push(v);
-      }
-      if (!ridge.length) return [];
-      W = 2 * median(ridge) - 1; Lt = 2 * W;
+    // Several plausible tile sizes: the one from clean single tiles (often the hand, which may be bigger
+    // than a board the game has shrunk to fit), and sizes measured from the blob itself at the length/width
+    // ratios real sets use. Keep the split that explains the blob best.
+    const ridge = [];
+    for (let y = 1; y < LH - 1; y++) for (let x = 1; x < LW - 1; x++) {
+      const i = y * LW + x, v = D[i];
+      if (v > 3 && v >= D[i - 1] && v >= D[i + 1] && v >= D[i - LW] && v >= D[i + LW]) ridge.push(v);
     }
-    if (W < 10 || c.area < 1.5 * W * Lt) return [];
+    const tries = [];
+    if (hint) tries.push([Math.round(hint.W), Math.round(hint.L)]);
+    if (ridge.length) { const W0 = 2 * median(ridge) - 1;
+      for (const [dw, r] of (hint ? [[0, 1.9]] : [[0, 1.9], [0, 2]])) tries.push([W0 + dw, Math.round((W0 + dw) * r)]); }
+    let bestSplit = null;
+    for (const [W, Lt] of tries) {
+      if (W < 10 || c.area < 1.5 * W * Lt) continue;
+      const res = splitWith(loc, W, Lt);
+      if (res && (!bestSplit || res.score > bestSplit.score)) bestSplit = res;
+    }
+    return bestSplit ? bestSplit.out : [];
+  }
+
+  function splitWith(loc, W, Lt) {
+    const { P, LW, LH, area } = loc, c = { minx: loc.minx, miny: loc.miny, area }, M = loc.M.slice();
     const out = [];
     const II = new Int32Array((LW + 1) * (LH + 1));
     const RP = new Int32Array(LH * (LW + 1)), CP = new Int32Array(LW * (LH + 1));
@@ -182,8 +193,9 @@
     }
     // a real cluster of touching tiles is (almost) completely made of tiles; a panel or border is not
     let left = 0; for (let i = 0; i < M.length; i++) left += M[i];
-    if (left > area * 0.15 || out.length < 2) return [];
-    return out;
+    if (left > area * 0.15 || out.length < 2) return null;
+    const meanQ = out.reduce((a, t) => a + t.q, 0) / out.length;
+    return { out, score: meanQ * (1 - left / area) };
   }
 
   function fromMask(mask, w, h, out, deferred) {
@@ -214,7 +226,12 @@
     // split blobs of touching tiles, using the size of clean single tiles seen in this frame
     const singles = cands.filter(c => c.n === 1 && c.q > 0.85);
     const hint = singles.length >= 2 ? { W: median(singles.map(c => c.W)), L: median(singles.map(c => c.L)) } : null;
-    for (const loc of deferred.values()) cands.push(...decompose(loc, hint));
+    for (const loc of deferred.values()) {
+      // skip shapes that can't be a group of touching tiles (panels, banners, thin lines): saves a lot of time
+      if (hint) { const bw = loc.LW - 6, bh = loc.LH - 6;
+        if (loc.area > 40 * hint.W * hint.L || Math.min(bw, bh) < hint.W * 0.8 || loc.area < 1.5 * hint.W * hint.L * 0.6) continue; }
+      cands.push(...decompose(loc, hint));
+    }
     cands.sort((p, q) => q.q - p.q);
     const keep = [];
     for (const c of cands) {
@@ -264,7 +281,14 @@
       dist[i] = Math.sqrt(dr * dr + dg * dg + db * db);
     }
     const cand = new Uint8Array(bw * bh);
-    for (let i = 0; i < cand.length; i++) cand[i] = inR[i] && dist[i] > 45 ? 1 : 0;
+    // blank a thin strip along each divider line first: on small tiles the pips next to it touch the line
+    // and would merge with it into one non-round shape (a 6 would read as a 4)
+    const segLc = L / n, band = Math.max(0.8, segLc * 0.035);
+    for (let i = 0; i < cand.length; i++) {
+      if (!inR[i] || dist[i] <= 45) { cand[i] = 0; continue; }
+      const within = ((along[i] + hl) % segLc + segLc) % segLc;
+      cand[i] = Math.abs(within - segLc / 2) < band ? 0 : 1;
+    }
     const { lab, comps } = label(cand, bw, bh);
     const edge = new Uint8Array(comps.length + 1);
     for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {

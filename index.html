@@ -388,13 +388,14 @@ function render() {
   const opts = sel => '<option value="">–</option>' + Array.from({length:S.setN+1},(_,n)=>`<option ${sel===n?'selected':''}>${n}</option>`).join('');
   $('#endL').innerHTML = opts(E.ends ? E.ends[0] : null); $('#endR').innerHTML = opts(E.ends ? E.ends[1] : null);
   $('#endNote').innerHTML = !E.n ? 'board is empty' : E.warn ? '<span class="warn">check these</span>' : E.sure ? '' : '<span class="warn">guessed, please check</span>';
+  const boardWarn = E.n && E.warn ? '<div class="warn" style="margin:6px 0;padding:6px 8px;border:1px solid var(--red);border-radius:8px">⚠ The board doesn’t add up: a tile is probably missing or misread, so these ends and this advice may be wrong. Check the board, or fix the ends above.</div>' : '';
   const V = (S.voids[1]||[]).slice().sort((a,b)=>a-b);
   $('#voidNote').innerHTML = V.length ? 'Opponent has no: '+V.map(n=>'<span class="void">'+n+'</span>').join('')+' <button class="small" data-clearvoids="1">clear</button>' : '';
   const B = bestMoves(C, E);
-  $('#moves').innerHTML = B.msg ? `<div class="muted" style="margin-top:8px">${B.msg}</div>` : B.moves.map((m,i)=>`
+  $('#moves').innerHTML = boardWarn + (B.msg ? `<div class="muted" style="margin-top:8px">${B.msg}</div>` : B.moves.map((m,i)=>`
     <div class="move ${i?'':'best'}">${dominoSVG(...m.t)}
       <div><div class="what">${i?'':'▶ '}${fmt(m.k)} ${m.endIdx==null?'(lead)':`on the ${E.ends[m.endIdx]}`}</div><ul>${m.why.slice(0,4).map(w=>`<li>${w}</li>`).join('')}</ul></div>
-      <button class="small" data-play="${m.k}" data-end="${m.endIdx??''}">I played it</button></div>`).join('');
+      <button class="small" data-play="${m.k}" data-end="${m.endIdx??''}">I played it</button></div>`).join(''));
 
   $('#hand').innerHTML = C.mine.map(t=>`<button data-play="${key(...t)}" data-end="" title="I played ${t.join('|')}">${dominoSVG(...t)}</button>`).join('') || '<span class="muted">empty</span>';
   $('#chips').innerHTML = S.recent.slice(-10).reverse().map(r=>`<span class="chip ${r.s}">${r.s==='mine'?'✋':'✅'} ${fmt(r.k)}<button data-rm="${r.k}" title="Remove">✕</button></span>`).join('');
@@ -658,9 +659,16 @@ function watchTick() {
 function mirrorScreen(tc, hc, oc) {
   const cur = k => S.tiles[k] && S.tiles[k].s;
   // hysteresis: a tile appears after being seen in 3 of 4 scans and disappears after missing 3 of 4
-  const board = Object.keys(tc).filter(k => tc[k] >= (cur(k)==='played' ? 1 : 2));
-  const hand = Object.keys(hc).filter(k => hc[k] >= (cur(k)==='mine' ? 1 : 2) && !board.includes(k));
-  if (!board.length && !hand.length) return;                     // nothing visible (tab hidden?): keep state
+  const seenBoard = Object.keys(tc).filter(k => tc[k] >= (cur(k)==='played' ? 1 : 2));
+  const hand = Object.keys(hc).filter(k => hc[k] >= (cur(k)==='mine' ? 1 : 2) && !seenBoard.includes(k));
+  if (!seenBoard.length && !hand.length) return;                 // nothing visible (tab hidden?): keep state
+  const prevPlayed = Object.keys(S.tiles).filter(k=>cur(k)==='played');
+  // a new deal: the old board is gone and only a first tile or two are showing
+  const gone = prevPlayed.filter(k=>!tc[k]).length;
+  const freshDeal = prevPlayed.length >= 3 && seenBoard.length <= 2 && gone >= 3;
+  // played tiles never leave the board: keep them (unless now clearly back in the hand row) so a tile
+  // that becomes hard to read as the game shrinks the board is not lost
+  const board = freshDeal ? seenBoard : [...new Set([...seenBoard, ...prevPlayed.filter(k=>!(hc[k]>=2 && !tc[k]))])];
   const oldPlayed = Object.keys(S.tiles).filter(k=>cur(k)==='played'), oldMine = Object.keys(S.tiles).filter(k=>cur(k)==='mine');
   const same = (a,b) => a.length===b.length && a.every(k=>b.includes(k));
   // read the open ends from the layout when this frame shows exactly the board we have
@@ -672,7 +680,7 @@ function mirrorScreen(tc, hc, oc) {
   }
   const ocChanged = oc!=null && oc!==S.oppCount;
   if (same(board, oldPlayed) && same(hand, oldMine) && !ocChanged) return;
-  const newRound = !board.length && oldPlayed.length >= 2;
+  const newRound = freshDeal || (!seenBoard.length && oldPlayed.length >= 2);
   const E0 = boardEnds(), C0 = compute();
   mutate(()=>{
     if (newRound) { const n=S.names; S = Object.assign(fresh(S.setN,S.nPlayers,S.hand,keepPrefs()), {names:n}); S.log.push('— New round —'); }
