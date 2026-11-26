@@ -24,11 +24,20 @@
   button.on { background:var(--gold); color:#222; border-color:var(--gold); font-weight:600; }
   button.big { font-size:17px; padding:12px 16px; flex:1; min-width:140px; }
   button.small { padding:4px 8px; font-size:13px; }
+  select.end { font-size:20px; font-weight:700; padding:4px 8px; }
   .row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
-  .count { display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+  .top { display:grid; grid-template-columns:1fr 1.4fr; gap:12px; }
+  @media (max-width:640px) { .top { grid-template-columns:1fr; } }
   .count .big { font-size:56px; font-weight:800; color:var(--gold); line-height:1; }
-  .count .sub { color:var(--muted); font-size:14px; }
+  .count .sub { color:var(--muted); font-size:14px; margin-top:6px; }
   .count .sub b { color:var(--ink); }
+  .move { display:flex; gap:10px; align-items:center; background:#0d3326; border-radius:10px; padding:8px; margin-top:6px; border:2px solid transparent; }
+  .move.best { border-color:var(--gold); }
+  .move svg { width:76px; flex:none; }
+  .move .what { font-weight:700; font-size:16px; }
+  .move.best .what { font-size:18px; color:var(--gold); }
+  .move ul { margin:2px 0 0; padding-left:16px; font-size:13px; color:var(--muted); }
+  .move button { margin-left:auto; flex:none; }
   #view { width:100%; border-radius:10px; background:#000; touch-action:none; display:block; margin:10px 0; }
   #status { min-height:1.4em; font-size:14px; color:var(--muted); margin-top:8px; }
   #status.hot { color:var(--green); font-weight:600; }
@@ -36,6 +45,9 @@
   .chip { background:#0d3326; border:1px solid var(--line); border-radius:20px; padding:3px 4px 3px 10px; display:inline-flex; align-items:center; gap:6px; font-weight:600; }
   .chip.mine { border-color:var(--blue); }
   .chip button { padding:0 7px; border-radius:20px; font-size:13px; }
+  .hand { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+  .hand button { padding:2px; line-height:0; border-radius:7px; }
+  .hand svg { width:56px; }
   .muted { color:var(--muted); font-size:13px; }
   .warn { color:var(--red); font-size:13px; }
   .grid { display:grid; gap:4px; }
@@ -70,15 +82,22 @@
 </header>
 
 <main>
-  <section>
+  <section class="top">
     <div class="count">
-      <div><div class="muted" id="countLbl">Opponents hold</div><div class="big" id="bigNum">–</div></div>
+      <div class="muted" id="countLbl">Opponents hold</div>
+      <div class="big" id="bigNum">–</div>
       <div class="sub" id="countSub"></div>
     </div>
+    <div>
+      <h2 style="margin-bottom:4px">Best move</h2>
+      <div class="row muted">Open ends: <select class="end" id="endL"></select><select class="end" id="endR"></select><span id="endNote"></span></div>
+      <div id="moves"></div>
+    </div>
+  </section>
 
+  <section>
     <canvas id="view" width="640" height="300"></canvas>
-
-    <div class="row" id="srcRow">
+    <div class="row">
       <button id="camBtn">📷 Camera</button>
       <button id="scrBtn">🖥 Screen</button>
       <button id="upBtn">🖼 Photo</button>
@@ -86,11 +105,13 @@
       <button id="stopBtn" class="small">Stop</button>
     </div>
     <div class="row" style="margin-top:8px">
-      <button id="handBtn" class="big">✋ 1. Read my hand</button>
-      <button id="watchBtn" class="big">👁 2. Watch table</button>
+      <button id="handBtn" class="big">✋ Read my hand</button>
+      <button id="watchBtn" class="big">👁 Watch</button>
     </div>
-    <div id="status">Start the camera, point it at your hand and tap <b>Read my hand</b>. Then point it at the table and tap <b>Watch table</b>. New tiles are counted by themselves.</div>
+    <div id="status">Tap <b>Camera</b> (or <b>Screen</b> on a computer). Online game: drag a box around the <b>board</b> and tap <b>Watch</b>. Everything is then automatic.</div>
     <div class="chips" id="chips"></div>
+    <div class="muted" style="margin-top:8px">My hand (tap a tile if you played it and it wasn't picked up):</div>
+    <div class="hand" id="hand"></div>
   </section>
 
   <section>
@@ -101,7 +122,7 @@
 
   <details id="plDetails">
     <summary>Players, passes &amp; turns (optional)</summary>
-    <p class="muted">Turn on turn tracking to get a pip range for <i>each</i> opponent. Detected tiles are then assigned to whoever's turn it is, and Pass tells the app which numbers that player doesn't have.</p>
+    <p class="muted">Turn on turn tracking to get a pip range for <i>each</i> opponent and smarter best-move advice. Tap Pass when someone passes, so the app knows which numbers they don't have.</p>
     <label class="chk"><input type="checkbox" id="trackChk"> Track turns</label>
     <div class="players" id="players"></div>
   </details>
@@ -123,8 +144,9 @@
     <label>Domino set <select id="setSel"><option value="6">Double-6</option><option value="9">Double-9</option><option value="12">Double-12</option></select></label>
     <label>Players <select id="plSel"><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></label>
     <label>Tiles per hand <select id="handSel"></select></label>
-    <label>Black tiles with white pips <input type="checkbox" id="darkChk"></label>
-    <p class="muted">Optional: drag a box on the video to watch only part of it (for example to leave out your own hand on screen). Tap the video once to reset it to the full frame.</p>
+    <label>Camera only sees the table (my tiles seen there = I played them) <input type="checkbox" id="tableChk"></label>
+    <p class="muted">Tile and pip colours are detected automatically: white, black, grey or coloured pips.<br>
+    The box you drag on the video marks the <b>board</b>. Tiles outside the box are read as <b>your hand</b>. Tap the video once to remove the box.</p>
     <div class="row" style="justify-content:space-between; margin-top:14px">
       <button type="button" id="newBtn">New round</button>
       <button value="close" class="on">Done</button>
@@ -147,7 +169,7 @@
 <script src="detect.js"></script>
 <script>
 const $ = s => document.querySelector(s);
-const STORE = 'domino-pip-counter-v2';
+const STORE = 'domino-pip-counter-v3';
 const NAMES = { 2:['Me','Opponent'], 3:['Me','Right','Left'], 4:['Me','Right','Partner','Left'] };
 const key = (a,b) => a<=b ? a+'-'+b : b+'-'+a;
 const unkey = k => k.split('-').map(Number);
@@ -155,10 +177,11 @@ const allTiles = N => { const r=[]; for(let a=0;a<=N;a++) for(let b=a;b<=N;b++) 
 const pipsOf = t => t[0]+t[1];
 const sumP = arr => arr.reduce((s,t)=>s+pipsOf(t),0);
 const fmt = k => unkey(k).join('|');
+const has = (t,n) => t[0]===n || t[1]===n;
 
 function fresh(setN=6, nPlayers=4, hand=7, keep={}) {
-  return Object.assign({ setN, nPlayers, hand, names:NAMES[nPlayers].slice(), tiles:{}, voids:Array.from({length:nPlayers},()=>[]),
-    draws:Array(nPlayers).fill(0), log:[], recent:[], cur:1, track:false, dark:false }, keep);
+  return Object.assign({ setN, nPlayers, hand, names:NAMES[nPlayers].slice(), tiles:{}, order:[], endsFix:null, voids:Array.from({length:nPlayers},()=>[]),
+    draws:Array(nPlayers).fill(0), log:[], recent:[], cur:1, track:false, tableOnly:true }, keep);
 }
 let S; try { S = JSON.parse(localStorage.getItem(STORE)); } catch(e) {}
 if (!S || !S.tiles) S = fresh();
@@ -190,9 +213,9 @@ function compute() {
   const N=S.setN, all=allTiles(N), unknown=[], mine=[], played=[];
   for (const t of all) { const st=S.tiles[key(...t)]; if (!st) unknown.push(t); else if (st.s==='mine') mine.push(t); else played.push([...t, st.by]); }
   const nOpp = S.nPlayers-1;
-  const oppPlays = played.filter(p=>p[2]!==0).length;              // anything not played by me came from an opponent
+  const oppPlays = played.filter(p=>p[2]!==0).length;
   const oppDraws = S.draws.slice(1).reduce((s,x)=>s+x,0);
-  const K = Math.max(0, nOpp*S.hand + oppDraws - oppPlays);        // tiles in opponents' hands
+  const K = Math.max(0, nOpp*S.hand + oppDraws - oppPlays);
   const unknownPips = sumP(unknown), boneyard = unknown.length - K;
   const up = unknown.map(pipsOf).sort((x,y)=>x-y);
   let cMin, cMax;
@@ -214,19 +237,116 @@ function compute() {
     }
   }
   const perNum = [];
-  for (let n=0;n<=N;n++) perNum.push({ n, unseen: unknown.filter(t=>t[0]===n||t[1]===n).length, mine: mine.filter(t=>t[0]===n||t[1]===n).length });
+  for (let n=0;n<=N;n++) perNum.push({ n, unseen: unknown.filter(t=>has(t,n)).length, mine: mine.filter(t=>has(t,n)).length });
   return { all, unknown, mine, played, opps, unknownPips, boneyard, cMin, cMax, K, perNum };
 }
 
+/* ---------- open ends of the line of play ----------
+   In a line of dominoes every inner number is matched in pairs, so the two open ends are exactly
+   the numbers that appear an odd number of times on the board. Works whatever order tiles were seen in. */
+function boardEnds() {
+  const played = S.order.filter(k=>S.tiles[k] && S.tiles[k].s==='played');
+  if (!played.length) return { ends:null, sure:true, n:0 };
+  if (S.endsFix && S.endsFix.at===played.length) return { ends:S.endsFix.ends, sure:true, n:played.length };
+  const cnt = Array(S.setN+1).fill(0);
+  played.forEach(k=>{ const [a,b]=unkey(k); cnt[a]++; cnt[b]++; });
+  const odd = cnt.map((c,i)=>c%2?i:-1).filter(i=>i>=0);
+  if (odd.length===2) return { ends:odd, sure:true, n:played.length };
+  // both ends equal (or a misread tile): replay the plays in order
+  let ends=null, i0=0, bad=false;
+  if (S.endsFix && S.endsFix.at<played.length) { ends=S.endsFix.ends.slice(); i0=S.endsFix.at; }
+  for (let i=i0;i<played.length;i++) {
+    const [a,b]=unkey(played[i]);
+    if (!ends) ends=[a,b];
+    else if (ends[0]===a) ends[0]=b; else if (ends[0]===b) ends[0]=a;
+    else if (ends[1]===a) ends[1]=b; else if (ends[1]===b) ends[1]=a; else bad=true;
+  }
+  return { ends, sure: odd.length===0 && !bad && ends && ends[0]===ends[1], n:played.length, warn: odd.length>2 || bad };
+}
+
+/* ---------- best move ---------- */
+function bestMoves(C, E) {
+  const hand = C.mine, unseen = C.unknown;
+  if (!hand.length) return { msg:'Read your hand first.' };
+  const moves = [];
+  const nextOpp = S.track && S.nPlayers>1 ? 1 : -1, partner = S.nPlayers===4 ? 2 : -1;
+  const mk = (t, endIdx) => {
+    const rest = hand.filter(x=>x!==t), why = [];
+    let score = 0, newEnds;
+    if (endIdx==null) newEnds = [t[0], t[1]];
+    else { const e=E.ends[endIdx], f=E.ends[1-endIdx]; newEnds = endIdx===0 ? [t[0]===e?t[1]:t[0], f] : [f, t[0]===e?t[1]:t[0]]; }
+    if (!rest.length) { score += 1000; why.push('🏆 you go out (domino)!'); }
+    score += 0.6*pipsOf(t); if (pipsOf(t)>=8) why.push(`dumps ${pipsOf(t)} pips`);
+    if (t[0]===t[1]) { score += 4; why.push('gets rid of a double'); }
+    const follow = rest.filter(x=>has(x,newEnds[0])||has(x,newEnds[1])).length;
+    if (rest.length) {
+      if (follow) { score += 2.5*Math.min(follow,3); why.push(`you can follow with ${follow} tile${follow>1?'s':''}`); }
+      else { score -= 6; why.push('⚠ leaves you no follow-up'); }
+    }
+    const oppCan = unseen.filter(x=>has(x,newEnds[0])||has(x,newEnds[1])).length;
+    score -= 0.8*oppCan;
+    if (!oppCan) why.push('opponents have nothing for these ends');
+    else if (oppCan<=3) why.push(`only ${oppCan} unseen tile${oppCan>1?'s':''} fit the new ends`);
+    for (const x of new Set(newEnds)) {
+      const m = rest.filter(y=>has(y,x)).length, u = unseen.filter(y=>has(y,x)).length;
+      score += 1.2*(m-u);
+      if (m>=2 && m>u) why.push(`you control the ${x}s (${m} in hand, ${u} unseen)`);
+    }
+    if (nextOpp>0) { const v=S.voids[nextOpp]; if (newEnds.every(x=>v.includes(x))) { score += 6; why.push(`${pname(nextOpp)} can't play (passed on ${[...new Set(newEnds)].join(' & ')})`); } }
+    if (partner>0 && S.track) { const v=S.voids[partner]; if (newEnds.every(x=>v.includes(x))) { score -= 3; why.push(`your partner can't follow`); } }
+    if (rest.length && !oppCan && !follow && E.ends) {
+      const mineLeft = sumP(rest);
+      if (mineLeft < C.cMin) { score += 30; why.push(`🔒 blocks the game and you win on count (${mineLeft} vs ≥${C.cMin})`); }
+      else if (mineLeft > C.cMax) { score -= 30; why.push(`🔒 blocks the game but you lose on count (${mineLeft} vs ≤${C.cMax})`); }
+      else { score -= 5; why.push('🔒 blocks the game: count could go either way'); }
+    }
+    return { t, k:key(...t), endIdx, newEnds, score, why };
+  };
+  if (!E.ends) hand.forEach(t=>{ const m=mk(t,null); m.score += 2*hand.filter(x=>x!==t && (has(x,t[0])||has(x,t[1]))).length; moves.push(m); });
+  else for (const t of hand) for (const i of [0,1]) {
+    if (!has(t, E.ends[i])) continue;
+    if (i===1 && E.ends[0]===E.ends[1]) continue;
+    moves.push(mk(t,i));
+  }
+  if (!moves.length) return { msg:`Nothing fits ${E.ends[0]} or ${E.ends[1]}. ${C.boneyard>0?'Draw a tile.':'Pass.'}` };
+  moves.sort((a,b)=>b.score-a.score);
+  return { moves:moves.slice(0,3) };
+}
+
+function playMine(k, endIdx, E) {
+  mutate(()=>{
+    S.tiles[k] = {s:'played', by:0};
+    S.order = S.order.filter(x=>x!==k); S.order.push(k);
+    if (E && E.ends && endIdx!=null) {
+      const t=unkey(k), e=E.ends[endIdx], ne=E.ends.slice(); ne[endIdx] = t[0]===e ? t[1] : t[0];
+      S.endsFix = { at:S.order.filter(x=>S.tiles[x]&&S.tiles[x].s==='played').length, ends:ne };
+    }
+    S.log.push(`I played ${fmt(k)}`); S.recent.push({k, s:'played'});
+    if (S.track) S.cur = nextP(0);
+  });
+}
+
 /* ---------- rendering ---------- */
+let lastE = null;
 function render() {
-  const C = compute();
+  const C = compute(), E = boardEnds(); lastE = E;
   $('#bigNum').textContent = C.cMin===C.cMax ? C.cMin : `${C.cMin}–${C.cMax}`;
   $('#countLbl').textContent = C.cMin===C.cMax ? 'Opponents hold (pips)' : 'Opponents hold (pips, range)';
-  $('#countSub').innerHTML = `<b>${C.K}</b> tiles in their hands<br><b>${Math.max(0,C.boneyard)}</b> in the boneyard · <b>${C.unknownPips}</b> pips unseen<br>My hand: <b>${sumP(C.mine)}</b> pips (${C.mine.length} tiles)`
+  $('#countSub').innerHTML = `<b>${C.K}</b> tiles in their hands · <b>${Math.max(0,C.boneyard)}</b> in the boneyard<br><b>${C.unknownPips}</b> pips unseen · my hand <b>${sumP(C.mine)}</b> pips (${C.mine.length} tiles)`
     + (C.boneyard<0 ? `<br><span class="warn">Too many tiles marked. Check the grid or the settings.</span>` : '');
 
-  $('#chips').innerHTML = S.recent.slice(-12).reverse().map(r=>`<span class="chip ${r.s}">${r.s==='mine'?'✋':'✅'} ${fmt(r.k)}<button data-rm="${r.k}" title="Remove">✕</button></span>`).join('');
+  // ends + best move
+  const opts = sel => '<option value="">–</option>' + Array.from({length:S.setN+1},(_,n)=>`<option ${sel===n?'selected':''}>${n}</option>`).join('');
+  $('#endL').innerHTML = opts(E.ends ? E.ends[0] : null); $('#endR').innerHTML = opts(E.ends ? E.ends[1] : null);
+  $('#endNote').innerHTML = !E.n ? 'board is empty' : E.warn ? '<span class="warn">check these</span>' : E.sure ? '' : '<span class="warn">guessed, please check</span>';
+  const B = bestMoves(C, E);
+  $('#moves').innerHTML = B.msg ? `<div class="muted" style="margin-top:8px">${B.msg}</div>` : B.moves.map((m,i)=>`
+    <div class="move ${i?'':'best'}">${dominoSVG(...m.t)}
+      <div><div class="what">${i?'':'▶ '}${fmt(m.k)} ${m.endIdx==null?'(lead)':`on the ${E.ends[m.endIdx]}`}</div><ul>${m.why.slice(0,3).map(w=>`<li>${w}</li>`).join('')}</ul></div>
+      <button class="small" data-play="${m.k}" data-end="${m.endIdx??''}">I played it</button></div>`).join('');
+
+  $('#hand').innerHTML = C.mine.map(t=>`<button data-play="${key(...t)}" data-end="" title="I played ${t.join('|')}">${dominoSVG(...t)}</button>`).join('') || '<span class="muted">empty</span>';
+  $('#chips').innerHTML = S.recent.slice(-10).reverse().map(r=>`<span class="chip ${r.s}">${r.s==='mine'?'✋':'✅'} ${fmt(r.k)}<button data-rm="${r.k}" title="Remove">✕</button></span>`).join('');
 
   const N=S.setN, g=$('#grid');
   g.style.gridTemplateColumns = `repeat(${N+1}, minmax(0,1fr))`;
@@ -248,7 +368,7 @@ function render() {
   $('#nums').innerHTML = C.perNum.map(p=>`<div class="num ${p.unseen?'':'zero'}"><span class="muted">${p.n}s</span><b>${p.unseen}</b><span class="muted">mine ${p.mine}</span></div>`).join('');
   $('#log').innerHTML = S.log.slice().reverse().slice(0,80).map(l=>`<li>${l}</li>`).join('');
 
-  $('#setSel').value=S.setN; $('#plSel').value=S.nPlayers; $('#darkChk').checked=S.dark;
+  $('#setSel').value=S.setN; $('#plSel').value=S.nPlayers; $('#tableChk').checked=S.tableOnly;
   const hs=$('#handSel'); hs.innerHTML='';
   for (let h=3; h<=Math.floor(C.all.length/S.nPlayers); h++) hs.add(new Option(h, h));
   hs.value=S.hand;
@@ -257,39 +377,47 @@ function render() {
 
 // state changes (call inside mutate)
 function addTile(k, s, by) {
-  if (s==='mine') { S.tiles[k]={s:'mine'}; S.log.push(`My hand: ${fmt(k)}`); }
+  if (s==='mine') { S.tiles[k]={s:'mine'}; S.order=S.order.filter(x=>x!==k); S.log.push(`My hand: ${fmt(k)}`); }
   else {
     if (by===undefined) by = S.track ? S.cur : -1;
-    S.tiles[k]={s:'played', by}; S.log.push(`${by>=0?pname(by):'Someone'} played ${fmt(k)}`);
+    S.tiles[k]={s:'played', by}; S.order=S.order.filter(x=>x!==k); S.order.push(k);
+    S.log.push(`${by===0?'I':by>0?pname(by):'Someone'} played ${fmt(k)}`);
     if (S.track && by>=0) S.cur = nextP(by);
   }
   S.recent.push({k, s}); if (S.recent.length>30) S.recent.shift();
 }
-function removeTile(k) { delete S.tiles[k]; S.recent = S.recent.filter(r=>r.k!==k); S.log.push(`Removed ${fmt(k)}`); }
+function removeTile(k) { delete S.tiles[k]; S.order=S.order.filter(x=>x!==k); S.recent = S.recent.filter(r=>r.k!==k); S.log.push(`Removed ${fmt(k)}`); }
 
 /* ---------- events ---------- */
 document.addEventListener('click', e => {
-  const t = e.target.closest('[data-t],[data-rm],[data-pass],[data-draw],[data-rename],[data-turn]');
+  const t = e.target.closest('[data-t],[data-rm],[data-pass],[data-draw],[data-rename],[data-turn],[data-play]');
   if (!t) return;
   const d = t.dataset;
-  if (d.t) { const k=d.t, st=S.tiles[k];
-    mutate(()=>{ if (!st) addTile(k,'played'); else if (st.s==='played') { delete S.tiles[k]; addTile(k,'mine'); } else removeTile(k); }); }
+  if (d.play) playMine(d.play, d.end==='' ? null : +d.end, lastE);
+  else if (d.t) { const k=d.t, st=S.tiles[k];
+    mutate(()=>{ if (!st) addTile(k,'played'); else if (st.s==='played') addTile(k,'mine'); else removeTile(k); }); }
   else if (d.rm) mutate(()=>removeTile(d.rm));
   else if (d.turn) mutate(()=>{ S.cur=+d.turn; });
   else if (d.draw) { const i=+d.draw; mutate(()=>{ S.draws[i]++; S.log.push(`${pname(i)} drew a tile`); }); }
   else if (d.pass) openPass(+d.pass);
   else if (d.rename) { const i=+d.rename, n=prompt('Player name', S.names[i]); if (n&&n.trim()) mutate(()=>{ S.names[i]=n.trim().slice(0,16); }); }
 });
+function setEnds() {
+  const l=$('#endL').value, r=$('#endR').value;
+  if (l===''||r==='') return;
+  mutate(()=>{ S.endsFix = { at:S.order.filter(x=>S.tiles[x]&&S.tiles[x].s==='played').length, ends:[+l,+r] }; });
+}
+$('#endL').onchange = setEnds; $('#endR').onchange = setEnds;
 $('#undoBtn').onclick = undo;
 $('#setBtn').onclick = () => $('#setDlg').showModal();
 $('#trackChk').onchange = e => mutate(()=>{ S.track=e.target.checked; });
-$('#darkChk').onchange = e => mutate(()=>{ S.dark=e.target.checked; });
-const keepPrefs = () => ({ names:S.names, track:S.track, dark:S.dark });
-$('#newBtn').onclick = () => { if (confirm('Start a new round? All tiles are cleared.')) { mutate(()=>{ S=fresh(S.setN,S.nPlayers,S.hand,keepPrefs()); }); votes=[]; $('#setDlg').close(); setStatus('New round. Read your hand first.'); } };
+$('#tableChk').onchange = e => mutate(()=>{ S.tableOnly=e.target.checked; });
+const keepPrefs = () => ({ names:S.names, track:S.track, tableOnly:S.tableOnly });
+$('#newBtn').onclick = () => { if (confirm('Start a new round? All tiles are cleared.')) { mutate(()=>{ S=fresh(S.setN,S.nPlayers,S.hand,keepPrefs()); }); votes=[]; $('#setDlg').close(); setStatus('New round.'); } };
 function reconfigure(setN, nP, hand) {
   if (Object.keys(S.tiles).length && !confirm('Changing this starts a new round. Continue?')) { render(); return; }
   const max = Math.floor(allTiles(setN).length/nP);
-  const keep = { track:S.track, dark:S.dark }; if (nP===S.nPlayers) keep.names=S.names;
+  const keep = { track:S.track, tableOnly:S.tableOnly }; if (nP===S.nPlayers) keep.names=S.names;
   mutate(()=>{ S = fresh(setN, nP, Math.min(hand, max), keep); });
 }
 $('#setSel').onchange = e => { const n=+e.target.value; reconfigure(n, S.nPlayers, n===6?7:n===9?(S.nPlayers===4?10:12):(S.nPlayers===4?15:12)); };
@@ -298,9 +426,10 @@ $('#handSel').onchange = e => mutate(()=>{ S.hand=+e.target.value; });
 
 let passPlayer=0, passSel=new Set();
 function openPass(i) {
-  passPlayer=i; passSel=new Set(); $('#passTitle').textContent = `${pname(i)} passed`;
+  passPlayer=i; passSel=new Set(lastE && lastE.ends ? lastE.ends : []); $('#passTitle').textContent = `${pname(i)} passed`;
   const box=$('#passNums'); box.innerHTML='';
-  for (let n=0;n<=S.setN;n++) { const b=document.createElement('button'); b.type='button'; b.textContent=n; b.onclick=()=>{ passSel.has(n)?passSel.delete(n):passSel.add(n); b.classList.toggle('on'); }; box.appendChild(b); }
+  for (let n=0;n<=S.setN;n++) { const b=document.createElement('button'); b.type='button'; b.textContent=n; if (passSel.has(n)) b.classList.add('on');
+    b.onclick=()=>{ passSel.has(n)?passSel.delete(n):passSel.add(n); b.classList.toggle('on'); }; box.appendChild(b); }
   $('#passDlg').showModal();
 }
 $('#passDlg').addEventListener('close', () => {
@@ -311,8 +440,8 @@ $('#passDlg').addEventListener('close', () => {
 
 /* ---------- camera / screen / photo ---------- */
 const view=$('#view'), vctx=view.getContext('2d');
-let stream=null, video=null, src=null, isLive=false;
-let roi={x:0,y:0,w:1,h:1}, drag=null, lastDet=[], busy=false;
+let stream=null, video=null, src=null, isLive=false, isScreen=false;
+let roi=null, drag=null, lastDet=[], busy=false;            // roi = board box (normalised) or null
 let watching=false, watchTimer=null, votes=[];
 const VOTE_N=4, VOTE_NEED=3;              // a tile must be seen in 3 of the last 4 scans before it counts
 const srcW = () => src ? (src.videoWidth||src.naturalWidth||0) : 0;
@@ -320,79 +449,93 @@ const srcH = () => src ? (src.videoHeight||src.naturalHeight||0) : 0;
 let statusTimer;
 function setStatus(html, hot=false) { const el=$('#status'); el.innerHTML=html; el.classList.toggle('hot',hot); clearTimeout(statusTimer); if (hot) statusTimer=setTimeout(()=>el.classList.remove('hot'),1500); }
 function updateButtons() {
-  const has = !!srcW();
-  $('#handBtn').disabled = !has || busy; $('#watchBtn').disabled = !has;
+  const ok = !!srcW();
+  $('#handBtn').disabled = !ok || busy; $('#watchBtn').disabled = !ok;
   $('#watchBtn').classList.toggle('on', watching);
-  $('#watchBtn').textContent = !isLive && has ? '✅ 2. Add photo as played' : watching ? '⏸ Watching… (tap to stop)' : '👁 2. Watch table';
+  $('#watchBtn').textContent = !isLive && ok ? '✅ Add photo as played' : watching ? '⏸ Watching… (tap to stop)' : '👁 Watch';
 }
 
 function stopAll() { setWatch(false); if (stream) stream.getTracks().forEach(t=>t.stop()); stream=null; if (video) { video.remove(); video=null; } src=null; isLive=false; lastDet=[]; updateButtons(); }
-async function startStream(getter) {
+async function startStream(getter, screen) {
   try {
     stopAll();
     stream = await getter();
     video = document.createElement('video'); video.playsInline=true; video.muted=true; video.setAttribute('playsinline','');
     video.style.cssText='position:fixed;width:1px;height:1px;opacity:0;pointer-events:none';
     document.body.appendChild(video); video.srcObject=stream; await video.play();
-    src=video; isLive=true;
+    src=video; isLive=true; isScreen=screen;
     stream.getVideoTracks()[0].addEventListener('ended', stopAll);
-    const wait = () => srcW() ? (updateButtons(), setStatus(Object.keys(S.tiles).length ? 'Ready. Tap <b>Watch table</b> to keep counting.' : 'Point the camera at <b>your hand</b> and tap <b>Read my hand</b>.')) : setTimeout(wait,100);
+    const wait = () => srcW() ? (updateButtons(), setStatus(screen
+      ? 'Drag a box around the <b>board</b> (your hand stays outside it), then tap <b>Watch</b>.'
+      : 'Point the camera at <b>your hand</b> and tap <b>Read my hand</b>. Then point it at the table and tap <b>Watch</b>.')) : setTimeout(wait,100);
     wait();
   } catch (err) { setStatus('Could not start: '+err.message); }
 }
-$('#camBtn').onclick = () => startStream(()=>navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false}));
+$('#camBtn').onclick = () => startStream(()=>navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false}), false);
 $('#scrBtn').onclick = () => {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) { setStatus('This browser can\'t share the screen (phones can\'t). Use Camera, or open the app on a computer.'); return; }
-  startStream(()=>navigator.mediaDevices.getDisplayMedia({video:{frameRate:10},audio:false}));
+  startStream(()=>navigator.mediaDevices.getDisplayMedia({video:{frameRate:10},audio:false}), true);
 };
 $('#upBtn').onclick = () => $('#file').click();
 $('#file').onchange = e => { const f=e.target.files[0]; if (!f) return;
-  const img=new Image(); img.onload=()=>{ stopAll(); src=img; isLive=false; lastDet=scanFrame(); updateButtons();
-    setStatus(`Found ${lastDet.filter(t=>t.ok).length} tile(s) in the photo. Add them as <b>my hand</b> or as <b>played</b>.`); };
+  const img=new Image(); img.onload=()=>{ stopAll(); src=img; isLive=false; isScreen=false; lastDet=scanFrame(); updateButtons();
+    setStatus(`Found ${lastDet.length} tile(s) in the photo. Add them as <b>my hand</b> or as <b>played</b>.`); };
   img.src=URL.createObjectURL(f); e.target.value=''; };
 $('#stopBtn').onclick = stopAll;
 
-// optional box: drag to limit the area; single tap resets to full frame
+// board box: drag to draw it; a single tap removes it
 function viewToNorm(e) { const r=view.getBoundingClientRect(); return { x:Math.min(1,Math.max(0,(e.clientX-r.left)/r.width)), y:Math.min(1,Math.max(0,(e.clientY-r.top)/r.height)) }; }
 view.addEventListener('pointerdown', e => { if (!srcW()) return; view.setPointerCapture(e.pointerId); drag={p:viewToNorm(e), moved:false}; });
 view.addEventListener('pointermove', e => { if (!drag) return; const p=viewToNorm(e), q=drag.p;
   const r={x:Math.min(q.x,p.x), y:Math.min(q.y,p.y), w:Math.abs(p.x-q.x), h:Math.abs(p.y-q.y)};
   if (r.w>0.05 && r.h>0.05) { roi=r; drag.moved=true; votes=[]; } });
-view.addEventListener('pointerup', () => { if (drag && !drag.moved) { roi={x:0,y:0,w:1,h:1}; votes=[]; } drag=null; if (!isLive && src) lastDet=scanFrame(); });
+view.addEventListener('pointerup', () => {
+  if (drag && !drag.moved) { roi=null; votes=[]; setStatus('Box removed: the whole picture is treated as the table.'); }
+  else if (drag) setStatus(`Board box set. Tiles inside are <b>played</b>; tiles outside are <b>your hand</b>.${watching?'':' Tap <b>Watch</b>.'}`);
+  drag=null; if (!isLive && src) lastDet=scanFrame(); });
+const inBox = t => !roi || (t.cx>=roi.x && t.cx<=roi.x+roi.w && t.cy>=roi.y && t.cy<=roi.y+roi.h);
 
-// run the detector on the current frame (inside the box); returns tiles with normalised coords
+// run the detector on the whole frame; returns tiles with normalised coords
 function scanFrame() {
   const W=srcW(), H=srcH(); if (!W||!H) return [];
-  const sx=roi.x*W, sy=roi.y*H, sw=roi.w*W, sh=roi.h*H;
-  const scale=Math.min(1, 1100/Math.max(sw,sh));
-  const ow=Math.max(8,Math.round(sw*scale)), oh=Math.max(8,Math.round(sh*scale));
+  const scale=Math.min(1, (isScreen?1280:1100)/Math.max(W,H));
+  const ow=Math.max(8,Math.round(W*scale)), oh=Math.max(8,Math.round(H*scale));
   scanFrame.c = scanFrame.c || document.createElement('canvas');
   const oc=scanFrame.c; oc.width=ow; oc.height=oh;
-  const octx=oc.getContext('2d',{willReadFrequently:true}); octx.drawImage(src, sx,sy,sw,sh, 0,0,ow,oh);
-  const tiles = DominoDetect.detect(octx.getImageData(0,0,ow,oh).data, ow, oh, {maxPip:S.setN, darkTiles:S.dark});
-  const nx = x => roi.x + x/ow*roi.w, ny = y => roi.y + y/oh*roi.h;
-  return tiles.map(t=>({ k:key(t.a,t.b), ok:t.ok, corners:t.corners.map(([x,y])=>[nx(x),ny(y)]), pips:t.pips.map(p=>[nx(p.x),ny(p.y)]) }));
+  const octx=oc.getContext('2d',{willReadFrequently:true}); octx.drawImage(src,0,0,ow,oh);
+  const tiles = DominoDetect.detect(octx.getImageData(0,0,ow,oh).data, ow, oh, {maxPip:S.setN});
+  return tiles.map(t=>{ const cs=t.corners.map(([x,y])=>[x/ow,y/oh]);
+    return { k:key(t.a,t.b), corners:cs, cx:cs.reduce((s,c)=>s+c[0],0)/4, cy:cs.reduce((s,c)=>s+c[1],0)/4, pips:t.pips.map(p=>[p.x/ow,p.y/oh]) }; });
 }
 
 function setWatch(on) {
   watching=on; clearTimeout(watchTimer); votes=[];
-  if (on) { setStatus('Watching the table. New tiles are added when they show up clearly.'); watchTick(); }
+  if (on) { setStatus(roi ? 'Watching. Board inside the box, your hand outside.' : 'Watching the table. New tiles are added when they show up clearly.'); watchTick(); }
   updateButtons();
 }
 function watchTick() {
   if (!watching) return;
   if (isLive && !busy) {
     lastDet = scanFrame();
-    votes.push(new Set(lastDet.filter(t=>t.ok).map(t=>t.k))); if (votes.length>VOTE_N) votes.shift();
-    const cnt={}; votes.forEach(s=>s.forEach(k=>cnt[k]=(cnt[k]||0)+1));
-    const fresh = Object.keys(cnt).filter(k=>cnt[k]>=VOTE_NEED && !S.tiles[k]);
-    if (fresh.length) { mutate(()=>fresh.forEach(k=>addTile(k,'played'))); setStatus('Counted '+fresh.map(fmt).join(', '), true); if (navigator.vibrate) navigator.vibrate(40); }
+    const table = new Set(lastDet.filter(inBox).map(t=>t.k));
+    const handSet = new Set(roi ? lastDet.filter(t=>!inBox(t)).map(t=>t.k) : []);
+    votes.push({table, hand:handSet}); if (votes.length>VOTE_N) votes.shift();
+    const tc={}, hc={};
+    votes.forEach(v=>{ v.table.forEach(k=>tc[k]=(tc[k]||0)+1); v.hand.forEach(k=>hc[k]=(hc[k]||0)+1); });
+    const mineToPlayed = !!roi || (!isScreen && S.tableOnly);   // my tile seen on the board = I played it
+    const newPlayed = Object.keys(tc).filter(k=>tc[k]>=VOTE_NEED && (!S.tiles[k] || (mineToPlayed && S.tiles[k].s==='mine')));
+    const newMine = Object.keys(hc).filter(k=>hc[k]>=VOTE_NEED && !S.tiles[k] && !newPlayed.includes(k));
+    if (newPlayed.length || newMine.length) {
+      mutate(()=>{ newMine.forEach(k=>addTile(k,'mine')); newPlayed.forEach(k=>addTile(k,'played', S.tiles[k] && S.tiles[k].s==='mine' ? 0 : undefined)); });
+      setStatus([newPlayed.length?'Played: '+newPlayed.map(fmt).join(', '):'', newMine.length?'My hand: '+newMine.map(fmt).join(', '):''].filter(Boolean).join(' · '), true);
+      if (navigator.vibrate) navigator.vibrate(40);
+    }
   }
-  watchTimer = setTimeout(watchTick, 500);
+  watchTimer = setTimeout(watchTick, 400);
 }
 $('#watchBtn').onclick = () => {
   if (!isLive) { // photo: one shot
-    const fresh=[...new Set(lastDet.filter(t=>t.ok && !S.tiles[t.k]).map(t=>t.k))];
+    const fresh=[...new Set(lastDet.filter(t=>inBox(t) && !S.tiles[t.k]).map(t=>t.k))];
     if (fresh.length) mutate(()=>fresh.forEach(k=>addTile(k,'played')));
     setStatus(fresh.length ? 'Added as played: '+fresh.map(fmt).join(', ') : 'No new tiles in this photo.', !!fresh.length); return;
   }
@@ -400,19 +543,20 @@ $('#watchBtn').onclick = () => {
 };
 $('#handBtn').onclick = async () => {
   let found;
-  if (!isLive) found = [...new Set(lastDet.filter(t=>t.ok).map(t=>t.k))];
-  else { // take 5 quick readings and keep what shows up in most of them
+  const pick = det => det.filter(t=>!roi || !inBox(t)).map(t=>t.k);   // with a board box: only tiles outside it
+  if (!isLive) found = [...new Set(pick(lastDet))];
+  else {
     const wasWatching = watching; setWatch(false); busy=true; updateButtons(); setStatus('Reading your hand… hold still');
     const cnt={};
-    for (let i=0;i<5;i++) { lastDet=scanFrame(); new Set(lastDet.filter(t=>t.ok).map(t=>t.k)).forEach(k=>cnt[k]=(cnt[k]||0)+1); await new Promise(r=>setTimeout(r,250)); }
+    for (let i=0;i<5;i++) { lastDet=scanFrame(); new Set(pick(lastDet)).forEach(k=>cnt[k]=(cnt[k]||0)+1); await new Promise(r=>setTimeout(r,250)); }
     busy=false; found = Object.keys(cnt).filter(k=>cnt[k]>=3);
     if (wasWatching) setWatch(true);
   }
   const fresh = found.filter(k=>!S.tiles[k] || S.tiles[k].s!=='mine');
   if (fresh.length) mutate(()=>fresh.forEach(k=>addTile(k,'mine')));
   const total = Object.values(S.tiles).filter(t=>t.s==='mine').length;
-  setStatus(fresh.length ? `Added to my hand: ${fresh.map(fmt).join(', ')}. ${total}/${S.hand} tiles. ${total<S.hand?'Show the rest and tap again, or':'Now'} point at the table and tap <b>Watch table</b>.`
-                         : 'No tiles found. Hold the tiles flat, face up, with good light, and try again.', !!fresh.length);
+  setStatus(fresh.length ? `Added to my hand: ${fresh.map(fmt).join(', ')} (${total} tiles). Now tap <b>Watch</b>.`
+                         : 'No new tiles found. Hold the tiles flat, face up, with good light, and try again.', !!fresh.length);
   updateButtons();
 };
 
@@ -423,28 +567,27 @@ function loop() {
     const ch=Math.round(cw*H/W);
     if (view.width!==cw || view.height!==ch) { view.width=cw; view.height=ch; }
     vctx.drawImage(src,0,0,cw,ch);
-    if (roi.w<1 || roi.h<1) {
-      const rx=roi.x*cw, ry=roi.y*ch, rw=roi.w*cw, rh=roi.h*ch;
-      vctx.fillStyle='rgba(0,0,0,.45)';
-      vctx.fillRect(0,0,cw,ry); vctx.fillRect(0,ry+rh,cw,ch-ry-rh); vctx.fillRect(0,ry,rx,rh); vctx.fillRect(rx+rw,ry,cw-rx-rw,rh);
-      vctx.strokeStyle='#f2c14e'; vctx.lineWidth=2; vctx.setLineDash([8,6]); vctx.strokeRect(rx,ry,rw,rh); vctx.setLineDash([]);
-    }
-    const fs=Math.max(13,cw/45);
+    const fs=Math.max(13,cw/50);
     vctx.font=`bold ${fs}px system-ui`;
+    if (roi) {
+      const rx=roi.x*cw, ry=roi.y*ch, rw=roi.w*cw, rh=roi.h*ch;
+      vctx.strokeStyle='#f2c14e'; vctx.lineWidth=3; vctx.setLineDash([10,6]); vctx.strokeRect(rx,ry,rw,rh); vctx.setLineDash([]);
+      vctx.fillStyle='#f2c14e'; vctx.fillText('BOARD', rx+6, ry+fs+4);
+    }
     for (const t of lastDet) {
-      const st=S.tiles[t.k], col = !t.ok ? '#e5674f' : st ? (st.s==='mine' ? '#5aa9e6' : '#5fd38d') : '#f2c14e';
+      const st=S.tiles[t.k], col = st ? (st.s==='mine' ? '#5aa9e6' : '#5fd38d') : '#f2c14e';
       vctx.strokeStyle=col; vctx.lineWidth=3; vctx.beginPath();
       t.corners.forEach(([x,y],i)=> i ? vctx.lineTo(x*cw,y*ch) : vctx.moveTo(x*cw,y*ch)); vctx.closePath(); vctx.stroke();
-      vctx.fillStyle='#e5674f'; t.pips.forEach(([x,y])=>{ vctx.beginPath(); vctx.arc(x*cw,y*ch,Math.max(2.5,cw/260),0,7); vctx.fill(); });
-      const lx=Math.min(...t.corners.map(c=>c[0]))*cw, ly=Math.min(...t.corners.map(c=>c[1]))*ch, label=t.ok?fmt(t.k):'?';
-      vctx.fillStyle='rgba(0,0,0,.7)'; vctx.fillRect(lx, ly-fs-4, vctx.measureText(label).width+8, fs+4);
+      vctx.fillStyle='#e5674f'; t.pips.forEach(([x,y])=>{ vctx.beginPath(); vctx.arc(x*cw,y*ch,Math.max(2.5,cw/300),0,7); vctx.fill(); });
+      const lx=Math.min(...t.corners.map(c=>c[0]))*cw, ly=Math.min(...t.corners.map(c=>c[1]))*ch, label=fmt(t.k);
+      vctx.fillStyle='rgba(0,0,0,.75)'; vctx.fillRect(lx, ly-fs-4, vctx.measureText(label).width+8, fs+4);
       vctx.fillStyle=col; vctx.fillText(label, lx+4, ly-5);
     }
   } else {
     if (view.width!==640) { view.width=640; view.height=300; }
     vctx.fillStyle='#000'; vctx.fillRect(0,0,view.width,view.height);
     vctx.fillStyle='#a9c2b6'; vctx.font='18px system-ui'; vctx.textAlign='center';
-    vctx.fillText('Tap Camera to start', view.width/2, view.height/2); vctx.textAlign='start';
+    vctx.fillText('Tap Camera or Screen to start', view.width/2, view.height/2); vctx.textAlign='start';
   }
   requestAnimationFrame(loop);
 }
