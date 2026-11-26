@@ -481,7 +481,7 @@ async function startStream(getter, screen) {
 $('#camBtn').onclick = () => startStream(()=>navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false}), false);
 $('#scrBtn').onclick = () => {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) { setStatus('This browser can\'t share the screen (phones can\'t). Use Camera, or open the app on a computer.'); return; }
-  startStream(()=>navigator.mediaDevices.getDisplayMedia({video:{frameRate:10},audio:false}), true);
+  startStream(()=>navigator.mediaDevices.getDisplayMedia({video:{frameRate:{ideal:5,max:10}, width:{ideal:2560}, height:{ideal:1440}},audio:false}).then(st=>{ const tr=st.getVideoTracks()[0]; try { tr.contentHint='detail'; } catch(e){} return st; }), true);
 };
 $('#upBtn').onclick = () => $('#file').click();
 $('#file').onchange = e => { const f=e.target.files[0]; if (!f) return;
@@ -525,18 +525,19 @@ const autoSplit = () => !!roi || isScreen;
 function scanFrame() {
   const W=srcW(), H=srcH(); if (!W||!H) return [];
   // resolution adapts to tile size: aim for tiles ~36px wide (fast when tiles are big, sharp when small)
-  const target = scanFrame.max || 1280;
+  // screen: stay sharp; shrinking a screen capture throws away exactly the pip detail we need
+  const target = isScreen ? Math.max(1100, scanFrame.max || 1800) : (scanFrame.max || 1280);
   const scale=Math.min(1, target/Math.max(W,H));
   const ow=Math.max(8,Math.round(W*scale)), oh=Math.max(8,Math.round(H*scale));
   scanFrame.c = scanFrame.c || document.createElement('canvas');
   const oc=scanFrame.c; oc.width=ow; oc.height=oh;
-  const octx=oc.getContext('2d',{willReadFrequently:true}); octx.drawImage(src,0,0,ow,oh);
+  const octx=oc.getContext('2d',{willReadFrequently:true}); octx.imageSmoothingEnabled=true; octx.imageSmoothingQuality='high'; octx.drawImage(src,0,0,ow,oh);
   const t0 = performance.now();
   const tiles = DominoDetect.detect(octx.getImageData(0,0,ow,oh).data, ow, oh, {maxPip:S.setN, screen:isScreen});
   scanMs = Math.round(performance.now() - t0);
   if (tiles.length) { const ws=tiles.map(t=>t.W).sort((a,b)=>a-b), mw=ws[ws.length>>1];
-    scanFrame.max = Math.round(Math.min(1600, Math.max(640, Math.max(ow,oh) * (isScreen ? 30 : 36) / mw))); }
-  else scanFrame.max = Math.min(1600, (scanFrame.max||1280) + 160);   // nothing found: look closer next time
+    scanFrame.max = Math.round(Math.min(1800, Math.max(isScreen ? 1100 : 640, Math.max(ow,oh) * (isScreen ? 48 : 36) / mw))); }
+  else scanFrame.max = Math.min(1800, (scanFrame.max||1280) + 160);   // nothing found: look closer next time
   return tiles.map(t=>{ const cs=t.corners.map(([x,y])=>[x/ow,y/oh]);
     const ys=cs.map(c=>c[1]);
     return { k:key(t.a,t.b), corners:cs, cx:cs.reduce((s,c)=>s+c[0],0)/4, cy:cs.reduce((s,c)=>s+c[1],0)/4, hN:Math.max(...ys)-Math.min(...ys), pips:t.pips.map(p=>[p.x/ow,p.y/oh]) }; });

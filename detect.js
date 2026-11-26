@@ -247,17 +247,23 @@
       if (x === 0 || y === 0 || x === bw - 1 || y === bh - 1 || !inR[i - 1] || !inR[i + 1] || !inR[i - bw] || !inR[i + bw]) edge[id] = 1;
     }
     let blobs = [];
+    const junk = [];   // clear marks that are not clean pips (e.g. pips blurred together by video compression)
     for (const c of comps) {
       if (edge[c.id]) continue;
       const d = 2 * Math.sqrt(c.area / Math.PI);
-      if (d < W * 0.07 || d > W * 0.32 || c.area < 4) continue;
+      if (d < W * 0.07 || c.area < 4) continue;
       const cw = c.maxx - c.minx + 1, ch = c.maxy - c.miny + 1;
-      if (cw / ch < 0.5 || cw / ch > 2 || c.area / (cw * ch) < 0.5) continue;
+      if (d > W * 0.32 || cw / ch < 0.5 || cw / ch > 2 || c.area / (cw * ch) < 0.5) { junk.push({ x: c.sx / c.area + x0, y: c.sy / c.area + y0 }); continue; }
       blobs.push({ id: c.id, area: c.area, x: c.sx / c.area + x0, y: c.sy / c.area + y0 });
     }
     if (blobs.length > 2) {
       const med = median(blobs.map(b => b.area));
       blobs = blobs.filter(b => b.area > med * 0.4 && b.area < med * 2.5);
+    }
+    const segL0 = L / n, junkAt = Array.from({ length: n }, () => [0, 0]);
+    for (const j of junk) {
+      const pos = (j.x - cx) * ux + (j.y - cy) * uy + hl, k = Math.min(n - 1, Math.max(0, Math.floor(pos / segL0))), within = pos - k * segL0;
+      if (Math.abs(within - segL0 / 2) > segL0 * 0.08) junkAt[k][within < segL0 / 2 ? 0 : 1]++;   // ignore the divider line itself
     }
     const pipId = new Uint8Array(comps.length + 1);
     for (const b of blobs) pipId[b.id] = 1;
@@ -285,7 +291,9 @@
         const bin = Math.floor(along[i] - start);
         if (bin >= 0 && bin < nb) { sum[bin] += dist[i]; cnt[bin]++; }
       }
-      const prof = Array.from(sum, (v, i) => cnt[i] ? v / cnt[i] : 0);
+      const raw = Array.from(sum, (v, i) => cnt[i] ? v / cnt[i] : 0);
+      // light smoothing: video compression adds blocky noise along the tile
+      const prof = raw.map((v, i) => (2 * v + (raw[i - 1] ?? v) + (raw[i + 1] ?? v)) / 4);
       let on = 0;
       for (let i = Math.floor(nb * 0.43); i <= Math.ceil(nb * 0.57) && i < nb; i++) on = Math.max(on, prof[i]);
       const rest = prof.filter((_, i) => (i > nb * 0.1 && i < nb * 0.38) || (i > nb * 0.62 && i < nb * 0.9)).sort((p, q) => p - q);
@@ -299,11 +307,13 @@
       const cs = [[a0, -hw], [a1, -hw], [a1, hw], [a0, hw]].map(([p, q]) => [cx + p * ux + q * vx, cy + p * uy + q * vy]);
       const [a, b] = sg.c;
       let ok = a <= maxPip && b <= maxPip && !sg.bad;
+      if (ok && ((a === 0 && junkAt[k][0]) || (b === 0 && junkAt[k][1]))) ok = false;   // an 'empty' half with marks on it: unreadable, not 0
       if (ok && maxPip <= 9 && sg.cells) for (const h of [0, 1]) {     // pips must form a real domino pattern
         const key = sg.cells[h].slice().sort((p, q) => p - q).join(',');
         if (!PATTERNS[sg.c[h]].has(key)) ok = false;
       }
-      if (ok) ok = dividerOK(k);   // every real domino has a line across its middle
+      // a valid pip pattern with 3+ pips is proof enough; blanks and near-blanks must also show the divider line
+      if (ok && a + b <= 2) ok = dividerOK(k);
       return { a, b, ok, corners: cs, pips: sg.pips, W };
     });
   }
