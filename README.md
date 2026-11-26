@@ -12,9 +12,17 @@ Everything is then automatic: tiles inside the box are counted as played, tiles 
 A tile must show up the same way in 3 of 4 scans in a row before it counts. Tap ✕ on a chip to undo a wrong one, or tap any tile in the grid to fix it.
 
 ## Best move
-The app works out the two open ends by itself. In a line of dominoes every inner number is matched in pairs, so the open ends are the numbers that appear an odd number of times. It then ranks every legal play by:
-going out, pips dumped, getting rid of doubles, keeping a follow-up, how many unseen tiles fit the new ends, which numbers you control, known passes (with *Track turns*), and whether the play blocks the game, and whether you'd win or lose the count if it does.
-You can override the ends with the two drop-downs. Games with a spinner (four open ends) are not supported.
+The best move is the play that gives your opponent the fewest answers. It is not about dumping pips. For every legal play the app works out:
+1. **Opponent can't answer:** the exact chance that the next opponent holds no tile for the new open ends. This uses every tile still unseen (their hand plus the boneyard), how many tiles they hold, and the numbers they are known not to have.
+2. **If they answer, you can still play:** every answer they could give is checked against your remaining hand.
+3. **Locked games:** if nobody can play any more, it tells you whether you win or lose on the count.
+4. **Going out** always comes first.
+
+Pips are only used to break exact ties.
+
+**Passes are detected by themselves (2 players):** if you play twice in a row, your opponent couldn't answer, so they have none of those end numbers. The panel shows "Opponent has no: …" and uses it in every later suggestion. Tap **clear** if that is ever wrong.
+
+The two open ends are read by the app: from the numbers on the board, or from the layout when both ends show the same number. You can override them with the two drop-downs. Games with a spinner (four open ends) are not supported.
 
 ## Detection
 Colour-based: works with white, black or grey tiles and black, white or coloured pips, at any angle, including tiles touching each other on the board.

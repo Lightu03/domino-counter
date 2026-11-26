@@ -92,6 +92,7 @@
     <div>
       <h2 style="margin-bottom:4px">Best move</h2>
       <div class="row muted">Open ends: <select class="end" id="endL"></select><select class="end" id="endR"></select><span id="endNote"></span></div>
+      <div class="muted" id="voidNote" style="margin-top:4px"></div>
       <div id="moves"></div>
     </div>
   </section>
@@ -270,44 +271,58 @@ function boardEnds() {
 }
 
 /* ---------- best move ---------- */
+// Best move = the play that leaves the opponent the fewest answers (looks one turn ahead).
+// For every legal play:  1) chance the next opponent has NO tile for the new ends (exact hypergeometric
+// over the unseen tiles, minus numbers they are known not to have);  2) for each answer they could give,
+// whether you can still play afterwards;  3) locked games decided by the count;  4) going out wins.
+// Pips only break exact ties.
 function bestMoves(C, E) {
   const hand = C.mine, unseen = C.unknown;
   if (!hand.length) return { msg:'Read your hand first.' };
-  const moves = [];
-  const nextOpp = S.track && S.nPlayers>1 ? 1 : -1, partner = S.nPlayers===4 ? 2 : -1;
+  const moves = [], pct = p => Math.round(p*100)+'%';
+  const fits = (t, ends) => has(t, ends[0]) || has(t, ends[1]);
+  const voids = (S.voids[1] || []);
+  // tiles the next opponent could be holding, and how many they hold
+  let pool = unseen.filter(t => !voids.includes(t[0]) && !voids.includes(t[1]));
+  let k = S.track && C.opps.length ? C.opps[0].k : Math.round(C.K / Math.max(1, S.nPlayers-1));
+  if (pool.length < k) pool = unseen;                       // inconsistent info: fall back to all unseen tiles
+  k = Math.max(1, Math.min(k, pool.length));
+  const pNone = ends => {                                     // P(opponent holds no tile fitting these ends)
+    const N = pool.length, M = pool.filter(t=>fits(t,ends)).length;
+    if (!N) return 1;
+    let p = 1; for (let i=0;i<k;i++) { if (N-M-i <= 0) return 0; p *= (N-M-i)/(N-i); } return p;
+  };
+  const place = (t, ends, i) => { const e=ends[i], o=t[0]===e?t[1]:t[0]; const ne=ends.slice(); ne[i]=o; return ne; };
   const mk = (t, endIdx) => {
     const rest = hand.filter(x=>x!==t), why = [];
-    let score = 0, newEnds;
-    if (endIdx==null) newEnds = [t[0], t[1]];
-    else { const e=E.ends[endIdx], f=E.ends[1-endIdx]; newEnds = endIdx===0 ? [t[0]===e?t[1]:t[0], f] : [f, t[0]===e?t[1]:t[0]]; }
-    if (!rest.length) { score += 1000; why.push('🏆 you go out (domino)!'); }
-    score += 0.6*pipsOf(t); if (pipsOf(t)>=8) why.push(`dumps ${pipsOf(t)} pips`);
-    if (t[0]===t[1]) { score += 4; why.push('gets rid of a double'); }
-    const follow = rest.filter(x=>has(x,newEnds[0])||has(x,newEnds[1])).length;
-    if (rest.length) {
-      if (follow) { score += 2.5*Math.min(follow,3); why.push(`you can follow with ${follow} tile${follow>1?'s':''}`); }
-      else { score -= 6; why.push('⚠ leaves you no follow-up'); }
+    const newEnds = endIdx==null ? [t[0], t[1]] : place(t, E.ends, endIdx);
+    if (!rest.length) return { t, k:key(...t), endIdx, newEnds, score:1000, why:['🏆 you go out (domino)!'] };
+    const pB = pNone(newEnds), myNow = rest.some(x=>fits(x,newEnds));
+    // every answer the opponent could give, and whether you can still play after it
+    const outs = [];
+    for (const o of pool) for (const i of [0,1]) {
+      if (!has(o, newEnds[i]) || (i===1 && newEnds[0]===newEnds[1])) continue;
+      outs.push(rest.some(x=>fits(x, place(o, newEnds, i))) ? 1 : 0);
     }
-    const oppCan = unseen.filter(x=>has(x,newEnds[0])||has(x,newEnds[1])).length;
-    score -= 0.8*oppCan;
-    if (!oppCan) why.push('opponents have nothing for these ends');
-    else if (oppCan<=3) why.push(`only ${oppCan} unseen tile${oppCan>1?'s':''} fit the new ends`);
-    for (const x of new Set(newEnds)) {
-      const m = rest.filter(y=>has(y,x)).length, u = unseen.filter(y=>has(y,x)).length;
-      score += 1.2*(m-u);
-      if (m>=2 && m>u) why.push(`you control the ${x}s (${m} in hand, ${u} unseen)`);
+    const follow = outs.length ? outs.reduce((s,x)=>s+x,0)/outs.length : (myNow?1:0);
+    let score = 100*pB*(myNow ? 1 : 0.4) + 40*(1-pB)*follow;
+    why.push(`opponent can't answer: <b>${pct(pB)}</b>`);
+    if (pB < 1) why.push(`if they answer, you can still play: ${pct(follow)}`);
+    if (!myNow) why.push('⚠ you have nothing for these ends yourself');
+    const usedVoids = [...new Set(newEnds)].filter(x=>voids.includes(x));
+    if (usedVoids.length) why.push(`they showed they have no ${usedVoids.join(' or ')}`);
+    if (k===1 && pB<1) { score -= 200*(1-pB); why.push(`⚠ they have 1 tile left: ${pct(1-pB)} chance they go out`); }
+    // locked game: nobody can play any more and the boneyard is empty -> lowest count wins
+    if (C.boneyard<=0 && !unseen.some(x=>fits(x,newEnds)) && !myNow) {
+      const mine = sumP(rest);
+      if (mine < C.cMin) { score = 500; why.unshift(`🔒 locks the game and you win on count (${mine} vs ${C.cMin})`); }
+      else if (mine > C.cMax) { score = -500; why.unshift(`🔒 locks the game and you LOSE on count (${mine} vs ${C.cMax})`); }
+      else { score = 0; why.unshift('🔒 locks the game: the count could go either way'); }
     }
-    if (nextOpp>0) { const v=S.voids[nextOpp]; if (newEnds.every(x=>v.includes(x))) { score += 6; why.push(`${pname(nextOpp)} can't play (passed on ${[...new Set(newEnds)].join(' & ')})`); } }
-    if (partner>0 && S.track) { const v=S.voids[partner]; if (newEnds.every(x=>v.includes(x))) { score -= 3; why.push(`your partner can't follow`); } }
-    if (rest.length && !oppCan && !follow && E.ends) {
-      const mineLeft = sumP(rest);
-      if (mineLeft < C.cMin) { score += 30; why.push(`🔒 blocks the game and you win on count (${mineLeft} vs ≥${C.cMin})`); }
-      else if (mineLeft > C.cMax) { score -= 30; why.push(`🔒 blocks the game but you lose on count (${mineLeft} vs ≤${C.cMax})`); }
-      else { score -= 5; why.push('🔒 blocks the game: count could go either way'); }
-    }
+    score += 0.001*pipsOf(t);                                   // tie-break only
     return { t, k:key(...t), endIdx, newEnds, score, why };
   };
-  if (!E.ends) hand.forEach(t=>{ const m=mk(t,null); m.score += 2*hand.filter(x=>x!==t && (has(x,t[0])||has(x,t[1]))).length; moves.push(m); });
+  if (!E.ends) hand.forEach(t=>moves.push(mk(t,null)));
   else for (const t of hand) for (const i of [0,1]) {
     if (!has(t, E.ends[i])) continue;
     if (i===1 && E.ends[0]===E.ends[1]) continue;
@@ -345,6 +360,8 @@ function render() {
   const opts = sel => '<option value="">–</option>' + Array.from({length:S.setN+1},(_,n)=>`<option ${sel===n?'selected':''}>${n}</option>`).join('');
   $('#endL').innerHTML = opts(E.ends ? E.ends[0] : null); $('#endR').innerHTML = opts(E.ends ? E.ends[1] : null);
   $('#endNote').innerHTML = !E.n ? 'board is empty' : E.warn ? '<span class="warn">check these</span>' : E.sure ? '' : '<span class="warn">guessed, please check</span>';
+  const V = (S.voids[1]||[]).slice().sort((a,b)=>a-b);
+  $('#voidNote').innerHTML = V.length ? 'Opponent has no: '+V.map(n=>'<span class="void">'+n+'</span>').join('')+' <button class="small" data-clearvoids="1">clear</button>' : '';
   const B = bestMoves(C, E);
   $('#moves').innerHTML = B.msg ? `<div class="muted" style="margin-top:8px">${B.msg}</div>` : B.moves.map((m,i)=>`
     <div class="move ${i?'':'best'}">${dominoSVG(...m.t)}
@@ -396,10 +413,11 @@ function removeTile(k) { delete S.tiles[k]; S.order=S.order.filter(x=>x!==k); S.
 
 /* ---------- events ---------- */
 document.addEventListener('click', e => {
-  const t = e.target.closest('[data-t],[data-rm],[data-pass],[data-draw],[data-rename],[data-turn],[data-play]');
+  const t = e.target.closest('[data-t],[data-rm],[data-pass],[data-draw],[data-rename],[data-turn],[data-play],[data-clearvoids]');
   if (!t) return;
   const d = t.dataset;
-  if (d.play) playMine(d.play, d.end==='' ? null : +d.end, lastE);
+  if (d.clearvoids) mutate(()=>{ S.voids[1]=[]; S.log.push('Cleared what the opponent is known not to have'); });
+  else if (d.play) playMine(d.play, d.end==='' ? null : +d.end, lastE);
   else if (d.t) { const k=d.t, st=S.tiles[k];
     mutate(()=>{ if (!st) addTile(k,'played'); else if (st.s==='played') addTile(k,'mine'); else removeTile(k); }); }
   else if (d.rm) mutate(()=>removeTile(d.rm));
@@ -591,6 +609,7 @@ function mirrorScreen(tc, hc) {
   }
   if (same(board, oldPlayed) && same(hand, oldMine)) return;
   const newRound = !board.length && oldPlayed.length >= 2;
+  const E0 = boardEnds();
   mutate(()=>{
     if (newRound) { const n=S.names; S = Object.assign(fresh(S.setN,S.nPlayers,S.hand,keepPrefs()), {names:n}); S.log.push('— New round —'); }
     const prev = S.tiles, tiles = {}, added = [];
@@ -599,6 +618,11 @@ function mirrorScreen(tc, hc) {
       const by = p && p.s==='played' ? p.by : p && p.s==='mine' ? 0 : (S.track ? S.cur : -1);
       tiles[k] = { s:'played', by };
       if (!p || p.s!=='played') {
+        if (by===0 && S.lastBy===0 && S.nPlayers===2 && E0.ends && !newRound) {
+          const v=S.voids[1]; E0.ends.forEach(x=>{ if(!v.includes(x)) v.push(x); });
+          S.log.push('Opponent passed on '+[...new Set(E0.ends)].join(' & ')+' (they have none)');
+        }
+        S.lastBy = by;
         added.push('✅'+fmt(k)); S.recent.push({k, s:'played'});
         S.log.push((by===0?'I':by>0?pname(by):'Someone')+' played '+fmt(k));
         if (S.track && by>=0) S.cur = nextP(by);
