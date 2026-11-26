@@ -148,6 +148,7 @@
     <label>Players <select id="plSel"><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></label>
     <label>Tiles per hand <select id="handSel"></select></label>
     <label>Camera only sees the table (my tiles seen there = I played them) <input type="checkbox" id="tableChk"></label>
+    <label>This game has a stock / boneyard to draw from <input type="checkbox" id="stockChk"></label>
     <p class="muted">Tile and pip colours are detected automatically: white, black, grey or coloured pips.<br>
     Online games: your hand is found automatically (the row of tiles at the bottom). If that goes wrong, drag a box around the <b>board</b>: tiles outside it then count as your hand. Tap the video once to remove the box.</p>
     <div class="row" style="justify-content:space-between; margin-top:14px">
@@ -184,7 +185,7 @@ const has = (t,n) => t[0]===n || t[1]===n;
 
 function fresh(setN=6, nPlayers=4, hand=7, keep={}) {
   return Object.assign({ setN, nPlayers, hand, names:NAMES[nPlayers].slice(), tiles:{}, order:[], seen:[], endsFix:null, voids:Array.from({length:nPlayers},()=>[]),
-    draws:Array(nPlayers).fill(0), log:[], recent:[], cur:1, track:false, tableOnly:true }, keep);
+    draws:Array(nPlayers).fill(0), log:[], recent:[], cur:1, track:false, tableOnly:true, stock:true }, keep);
 }
 let S; try { S = JSON.parse(localStorage.getItem(STORE)); } catch(e) {}
 if (!S || !S.tiles) S = fresh();
@@ -312,12 +313,30 @@ function bestMoves(C, E) {
     const usedVoids = [...new Set(newEnds)].filter(x=>voids.includes(x));
     if (usedVoids.length) why.push(`they showed they have no ${usedVoids.join(' or ')}`);
     if (k===1 && pB<1) { score -= 200*(1-pB); why.push(`⚠ they have 1 tile left: ${pct(1-pB)} chance they go out`); }
-    // locked game: nobody can play any more and the boneyard is empty -> lowest count wins
-    if (C.boneyard<=0 && !unseen.some(x=>fits(x,newEnds)) && !myNow) {
+
+    // ---- what strong players also weigh ----
+    // keep variety: the more different numbers you still hold, the harder you are to block
+    const numsLeft = new Set(rest.flat()).size, numsNow = new Set(hand.flat()).size;
+    score += 3*numsLeft;
+    if (numsLeft < numsNow) why.push(`⚠ you'd lose your last ${[...new Set(t)].filter(x=>!rest.some(y=>has(y,x))).join(' & ')}`);
+    // control a number: steer the ends to numbers you hold plenty of and the opponent is short of
+    for (const x of new Set(newEnds)) {
+      const m = rest.filter(y=>has(y,x)).length, u = pool.filter(y=>has(y,x)).length;
+      score += 4*(m - u/2);
+      if (m >= 2 && m > u/2) why.push(`you control the ${x}s (${m} in hand, ${u} they could have)`);
+    }
+    // doubles get stuck when their number runs out: play them while they still fit
+    if (t[0]===t[1]) { const u = unseen.filter(y=>has(y,t[0])).length; score += u <= 3 ? 12 : 5; if (u <= 3) why.push('gets rid of a double that could get stuck'); }
+    for (const d of rest.filter(y=>y[0]===y[1])) if (!newEnds.includes(d[0]) && unseen.filter(y=>has(y,d[0])).length <= 2) { score -= 6; why.push(`⚠ your ${d[0]}|${d[0]} may get stuck`); }
+    // opponent about to go out: now the count matters, so shed heavy tiles
+    if (k <= 2) { score += 1.5*pipsOf(t); if (pipsOf(t) >= 7) why.push(`they're close to going out: sheds ${pipsOf(t)} pips`); }
+
+    // locked game: no unseen tile fits and neither do yours -> drawing can't help, lowest count wins.
+    // Only lock when you clearly win the count.
+    if (!unseen.some(x=>fits(x,newEnds)) && !myNow) {
       const mine = sumP(rest);
-      if (mine < C.cMin) { score = 500; why.unshift(`🔒 locks the game and you win on count (${mine} vs ${C.cMin})`); }
-      else if (mine > C.cMax) { score = -500; why.unshift(`🔒 locks the game and you LOSE on count (${mine} vs ${C.cMax})`); }
-      else { score = 0; why.unshift('🔒 locks the game: the count could go either way'); }
+      if (mine < C.cMin) { score = 500; why.unshift(`🔒 locks the game and you WIN on count (${mine} vs at least ${C.cMin})`); }
+      else { score = -500; why.unshift(`🔒 locks the game and you'd likely LOSE on count (you ${mine}, them ${C.cMin}${C.cMax!==C.cMin?'–'+C.cMax:''})`); }
     }
     score += 0.001*pipsOf(t);                                   // tie-break only
     return { t, k:key(...t), endIdx, newEnds, score, why };
@@ -365,7 +384,7 @@ function render() {
   const B = bestMoves(C, E);
   $('#moves').innerHTML = B.msg ? `<div class="muted" style="margin-top:8px">${B.msg}</div>` : B.moves.map((m,i)=>`
     <div class="move ${i?'':'best'}">${dominoSVG(...m.t)}
-      <div><div class="what">${i?'':'▶ '}${fmt(m.k)} ${m.endIdx==null?'(lead)':`on the ${E.ends[m.endIdx]}`}</div><ul>${m.why.slice(0,3).map(w=>`<li>${w}</li>`).join('')}</ul></div>
+      <div><div class="what">${i?'':'▶ '}${fmt(m.k)} ${m.endIdx==null?'(lead)':`on the ${E.ends[m.endIdx]}`}</div><ul>${m.why.slice(0,4).map(w=>`<li>${w}</li>`).join('')}</ul></div>
       <button class="small" data-play="${m.k}" data-end="${m.endIdx??''}">I played it</button></div>`).join('');
 
   $('#hand').innerHTML = C.mine.map(t=>`<button data-play="${key(...t)}" data-end="" title="I played ${t.join('|')}">${dominoSVG(...t)}</button>`).join('') || '<span class="muted">empty</span>';
@@ -391,7 +410,7 @@ function render() {
   $('#nums').innerHTML = C.perNum.map(p=>`<div class="num ${p.unseen?'':'zero'}"><span class="muted">${p.n}s</span><b>${p.unseen}</b><span class="muted">mine ${p.mine}</span></div>`).join('');
   $('#log').innerHTML = S.log.slice().reverse().slice(0,80).map(l=>`<li>${l}</li>`).join('');
 
-  $('#setSel').value=S.setN; $('#plSel').value=S.nPlayers; $('#tableChk').checked=S.tableOnly;
+  $('#setSel').value=S.setN; $('#plSel').value=S.nPlayers; $('#tableChk').checked=S.tableOnly; $('#stockChk').checked=S.stock!==false;
   const hs=$('#handSel'); hs.innerHTML='';
   for (let h=3; h<=Math.floor(C.all.length/S.nPlayers); h++) hs.add(new Option(h, h));
   hs.value=S.hand;
@@ -438,7 +457,8 @@ $('#setBtn').onclick = () => $('#setDlg').showModal();
 document.addEventListener('click', e => { if (e.target.id==='setLink') { e.preventDefault(); $('#setDlg').showModal(); } });
 $('#trackChk').onchange = e => mutate(()=>{ S.track=e.target.checked; });
 $('#tableChk').onchange = e => mutate(()=>{ S.tableOnly=e.target.checked; });
-const keepPrefs = () => ({ names:S.names, track:S.track, tableOnly:S.tableOnly });
+$('#stockChk').onchange = e => mutate(()=>{ S.stock=e.target.checked; });
+const keepPrefs = () => ({ names:S.names, track:S.track, tableOnly:S.tableOnly, stock:S.stock });
 $('#newBtn').onclick = () => { if (confirm('Start a new round? All tiles are cleared.')) { mutate(()=>{ S=fresh(S.setN,S.nPlayers,S.hand,keepPrefs()); }); votes=[]; if ($('#setDlg').open) $('#setDlg').close(); setStatus('New round.'); } };
 function reconfigure(setN, nP, hand) {
   if (Object.keys(S.tiles).length && !confirm('Changing this starts a new round. Continue?')) { render(); return; }
@@ -613,16 +633,26 @@ function mirrorScreen(tc, hc) {
   mutate(()=>{
     if (newRound) { const n=S.names; S = Object.assign(fresh(S.setN,S.nPlayers,S.hand,keepPrefs()), {names:n}); S.log.push('— New round —'); }
     const prev = S.tiles, tiles = {}, added = [];
+    const newBoardCount = board.filter(k=>!prev[k] || prev[k].s!=='played').length;
     for (const k of board) {
       const p = prev[k];
       const by = p && p.s==='played' ? p.by : p && p.s==='mine' ? 0 : (S.track ? S.cur : -1);
       tiles[k] = { s:'played', by };
       if (!p || p.s!=='played') {
-        if (by===0 && S.lastBy===0 && S.nPlayers===2 && E0.ends && !newRound) {
+        // pass detection, carefully: only a clean single play of mine right after a clean single play of mine
+        const single = newBoardCount === 1;
+        if (by===0 && S.lastBy===0 && S.lastSingle && single && S.nPlayers===2 && E0.ends && !newRound) {
           const v=S.voids[1]; E0.ends.forEach(x=>{ if(!v.includes(x)) v.push(x); });
-          S.log.push('Opponent passed on '+[...new Set(E0.ends)].join(' & ')+' (they have none)');
+          S.log.push('Opponent passed on '+[...new Set(E0.ends)].join(' & ')+' (they have none right now)');
         }
-        S.lastBy = by;
+        if (by!==0) {
+          const v=S.voids[1]||[], tt=unkey(k);
+          const wrong = v.filter(x=>tt.includes(x));
+          if (wrong.length) S.log.push('Opponent played '+fmt(k)+': they did have '+wrong.join(' & '));
+          // with a stock they may have drawn since passing, so what they lacked no longer holds
+          S.voids[1] = S.stock===false ? v.filter(x=>!tt.includes(x)) : [];
+        }
+        S.lastBy = by; S.lastSingle = single;
         added.push('✅'+fmt(k)); S.recent.push({k, s:'played'});
         S.log.push((by===0?'I':by>0?pname(by):'Someone')+' played '+fmt(k));
         if (S.track && by>=0) S.cur = nextP(by);
