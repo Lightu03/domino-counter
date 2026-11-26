@@ -220,7 +220,8 @@
     const x0 = Math.max(0, Math.floor(Math.min(...corners.map(p => p[0])))), x1 = Math.min(w - 1, Math.ceil(Math.max(...corners.map(p => p[0]))));
     const y0 = Math.max(0, Math.floor(Math.min(...corners.map(p => p[1])))), y1 = Math.min(h - 1, Math.ceil(Math.max(...corners.map(p => p[1]))));
     const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
-    const mT = hl - W * 0.05, mS = hw - W * 0.07;
+    // thin rim only: some games put pips very close to the long edges of small tiles
+    const mT = hl - Math.max(1, W * 0.03), mS = hw - Math.max(1, W * 0.035);
     const inR = new Uint8Array(bw * bh), along = new Float32Array(bw * bh), across = new Float32Array(bw * bh);
     const R = [], G = [], B = [];
     for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
@@ -249,7 +250,8 @@
     let blobs = [];
     const junk = [];   // clear marks that are not clean pips (e.g. pips blurred together by video compression)
     for (const c of comps) {
-      if (edge[c.id]) continue;
+      // spots touching the rim: keep round pip-like ones (pips near the edge), drop shadows / slivers via the shape tests below
+      if (edge[c.id] && c.area < 4) continue;
       const d = 2 * Math.sqrt(c.area / Math.PI);
       if (d < W * 0.07 || c.area < 4) continue;
       const cw = c.maxx - c.minx + 1, ch = c.maxy - c.miny + 1;
