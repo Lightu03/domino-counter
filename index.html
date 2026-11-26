@@ -104,6 +104,7 @@
       <button id="upBtn">🖼 Photo</button>
       <input id="file" type="file" accept="image/*" hidden>
       <button id="stopBtn" class="small">Stop</button>
+      <button id="saveBtn" class="small" title="Save exactly what the app sees, to send if something is misread">📸 Save frame</button>
     </div>
     <div class="row" style="margin-top:8px">
       <button id="handBtn" class="big">✋ Read my hand</button>
@@ -447,7 +448,9 @@ const view=$('#view'), vctx=view.getContext('2d');
 let stream=null, video=null, src=null, isLive=false, isScreen=false;
 let roi=null, drag=null, lastDet=[], busy=false;            // roi = board box (normalised) or null
 let watching=false, watchTimer=null, votes=[];
-const VOTE_N=4, VOTE_NEED=3;              // a tile must be seen in 3 of the last 4 scans before it counts
+const VOTE_N=4, VOTE_NEED=3;              // camera: a tile must be seen in 3 of the last 4 scans before it counts
+const MIRROR_N=3;                         // screen: appears after 2 of the last 3 scans, disappears after missing all 3
+let scanMs=0, lastCounts='';
 const srcW = () => src ? (src.videoWidth||src.naturalWidth||0) : 0;
 const srcH = () => src ? (src.videoHeight||src.naturalHeight||0) : 0;
 let statusTimer;
@@ -486,6 +489,11 @@ $('#file').onchange = e => { const f=e.target.files[0]; if (!f) return;
     setStatus(`Found ${lastDet.length} tile(s) in the photo. Add them as <b>my hand</b> or as <b>played</b>.`); };
   img.src=URL.createObjectURL(f); e.target.value=''; };
 $('#stopBtn').onclick = stopAll;
+$('#saveBtn').onclick = () => {
+  const W=srcW(), H=srcH(); if (!W) { setStatus('Nothing to save yet.'); return; }
+  const c=document.createElement('canvas'); c.width=W; c.height=H; c.getContext('2d').drawImage(src,0,0);
+  c.toBlob(b=>{ const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download='domino-frame-'+Date.now()+'.png'; a.click(); setStatus('Frame saved to your Downloads folder.'); }, 'image/png');
+};
 
 // board box: drag to draw it; a single tap removes it
 function viewToNorm(e) { const r=view.getBoundingClientRect(); return { x:Math.min(1,Math.max(0,(e.clientX-r.left)/r.width)), y:Math.min(1,Math.max(0,(e.clientY-r.top)/r.height)) }; }
@@ -519,9 +527,11 @@ function scanFrame() {
   scanFrame.c = scanFrame.c || document.createElement('canvas');
   const oc=scanFrame.c; oc.width=ow; oc.height=oh;
   const octx=oc.getContext('2d',{willReadFrequently:true}); octx.drawImage(src,0,0,ow,oh);
-  const tiles = DominoDetect.detect(octx.getImageData(0,0,ow,oh).data, ow, oh, {maxPip:S.setN});
+  const t0 = performance.now();
+  const tiles = DominoDetect.detect(octx.getImageData(0,0,ow,oh).data, ow, oh, {maxPip:S.setN, screen:isScreen});
+  scanMs = Math.round(performance.now() - t0);
   if (tiles.length) { const ws=tiles.map(t=>t.W).sort((a,b)=>a-b), mw=ws[ws.length>>1];
-    scanFrame.max = Math.round(Math.min(1600, Math.max(640, Math.max(ow,oh) * 36 / mw))); }
+    scanFrame.max = Math.round(Math.min(1600, Math.max(640, Math.max(ow,oh) * (isScreen ? 30 : 36) / mw))); }
   else scanFrame.max = Math.min(1600, (scanFrame.max||1280) + 160);   // nothing found: look closer next time
   return tiles.map(t=>{ const cs=t.corners.map(([x,y])=>[x/ow,y/oh]);
     const ys=cs.map(c=>c[1]);
@@ -543,10 +553,14 @@ function watchTick() {
     votes.push({table, hand}); if (votes.length>VOTE_N) votes.shift();
     const tc={}, hc={};
     votes.forEach(v=>{ v.table.forEach(k=>tc[k]=(tc[k]||0)+1); v.hand.forEach(k=>hc[k]=(hc[k]||0)+1); });
-    if (autoSplit()) { if (votes.length===VOTE_N) mirrorScreen(tc, hc); }
+    if (autoSplit()) {
+      const recent = votes.slice(-MIRROR_N), mt={}, mh={};
+      recent.forEach(v=>{ v.table.forEach(k=>mt[k]=(mt[k]||0)+1); v.hand.forEach(k=>mh[k]=(mh[k]||0)+1); });
+      if (recent.length===MIRROR_N) mirrorScreen(mt, mh);
+    }
     else accumulate(tc, hc);
   }
-  watchTimer = setTimeout(watchTick, 400);
+  watchTimer = setTimeout(watchTick, 60);   // next scan right away
 }
 
 // Online game: the whole board and my hand are always on screen, so the state simply MIRRORS the screen.
@@ -554,8 +568,8 @@ function watchTick() {
 function mirrorScreen(tc, hc) {
   const cur = k => S.tiles[k] && S.tiles[k].s;
   // hysteresis: a tile appears after being seen in 3 of 4 scans and disappears after missing 3 of 4
-  const board = Object.keys(tc).filter(k => tc[k] >= (cur(k)==='played' ? 2 : VOTE_NEED));
-  const hand = Object.keys(hc).filter(k => hc[k] >= (cur(k)==='mine' ? 2 : VOTE_NEED) && !board.includes(k));
+  const board = Object.keys(tc).filter(k => tc[k] >= (cur(k)==='played' ? 1 : 2));
+  const hand = Object.keys(hc).filter(k => hc[k] >= (cur(k)==='mine' ? 1 : 2) && !board.includes(k));
   if (!board.length && !hand.length) return;                     // nothing visible (tab hidden?): keep state
   const oldPlayed = Object.keys(S.tiles).filter(k=>cur(k)==='played'), oldMine = Object.keys(S.tiles).filter(k=>cur(k)==='mine');
   const same = (a,b) => a.length===b.length && a.every(k=>b.includes(k));
@@ -629,6 +643,8 @@ function loop() {
     vctx.drawImage(src,0,0,cw,ch);
     const fs=Math.max(13,cw/50);
     vctx.font=`bold ${fs}px system-ui`;
+    if (watching) { const hsN=handSet(lastDet).size, txt=`scan ${scanMs} ms · board ${lastDet.length-hsN} · hand ${hsN}`;
+      vctx.fillStyle='rgba(0,0,0,.7)'; vctx.fillRect(4,4,vctx.measureText(txt).width+12,fs+8); vctx.fillStyle='#5fd38d'; vctx.fillText(txt,10,fs+6); }
     if (roi) {
       const rx=roi.x*cw, ry=roi.y*ch, rw=roi.w*cw, rh=roi.h*ch;
       vctx.strokeStyle='#f2c14e'; vctx.lineWidth=3; vctx.setLineDash([10,6]); vctx.strokeRect(rx,ry,rw,rh); vctx.setLineDash([]);

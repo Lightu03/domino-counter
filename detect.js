@@ -178,9 +178,10 @@
     }
   }
 
-  function findTiles(rgba, w, h) {
+  function findTiles(rgba, w, h, screen) {
     const n = w * h, g = lum(rgba, n), o = otsu(g), cands = [];
-    const thrs = [o.t, o.t + (o.m1 - o.t) * 0.4, o.t + (o.m1 - o.t) * 0.75, o.t - (o.t - o.m0) * 0.4, o.t - (o.t - o.m0) * 0.75];
+    // screen captures have flat colours: the palette masks do the work, one brightness cut is enough
+    const thrs = screen ? [o.t] : [o.t, o.t + (o.m1 - o.t) * 0.4, o.t + (o.m1 - o.t) * 0.75, o.t - (o.t - o.m0) * 0.4, o.t - (o.t - o.m0) * 0.75];
     for (const t of thrs) {
       const hi = new Uint8Array(n), lo = new Uint8Array(n);
       for (let i = 0; i < n; i++) { hi[i] = g[i] > t ? 1 : 0; lo[i] = 1 - hi[i]; }
@@ -310,7 +311,7 @@
   function detect(rgba, w, h, opt) {
     opt = opt || {};
     const maxPip = opt.maxPip == null ? 6 : opt.maxPip;
-    let geos = findTiles(rgba, w, h), fallback = false;
+    let geos = findTiles(rgba, w, h, !!opt.screen), fallback = false;
     if (!geos.length && opt.fallback) {
       const horiz = w >= h;
       geos = [{ cx: w / 2, cy: h / 2, ux: horiz ? 1 : 0, uy: horiz ? 0 : 1, L: Math.max(w, h), W: Math.min(w, h), n: 1 }];
