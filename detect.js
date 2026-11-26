@@ -290,7 +290,8 @@
       const rest = prof.filter((_, i) => (i > nb * 0.1 && i < nb * 0.38) || (i > nb * 0.62 && i < nb * 0.9)).sort((p, q) => p - q);
       const off = rest[rest.length >> 1] || 0;
       const p90 = rest[Math.floor(rest.length * 0.9)] || 0;
-      return on > 7 && on > off + Math.max(5, off) && p90 < on * 0.7;
+      const rival = rest[rest.length - 1] || 0;   // strongest line elsewhere (stacked face-down tiles have several)
+      return on > 7 && on > off + Math.max(5, off) && p90 < on * 0.7 && rival < on * 0.8;
     };
     return segs.map((sg, k) => {
       const a0 = -hl + k * segL, a1 = a0 + segL;

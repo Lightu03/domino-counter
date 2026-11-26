@@ -78,6 +78,7 @@
 <header>
   <h1>🁫 Pip Counter</h1>
   <button id="undoBtn">↶ Undo</button>
+  <button id="newTopBtn">🔄 New round</button>
   <button id="setBtn">⚙</button>
 </header>
 
@@ -410,12 +411,13 @@ function setEnds() {
 }
 $('#endL').onchange = setEnds; $('#endR').onchange = setEnds;
 $('#undoBtn').onclick = undo;
+$('#newTopBtn').onclick = () => $('#newBtn').click();
 $('#setBtn').onclick = () => $('#setDlg').showModal();
 document.addEventListener('click', e => { if (e.target.id==='setLink') { e.preventDefault(); $('#setDlg').showModal(); } });
 $('#trackChk').onchange = e => mutate(()=>{ S.track=e.target.checked; });
 $('#tableChk').onchange = e => mutate(()=>{ S.tableOnly=e.target.checked; });
 const keepPrefs = () => ({ names:S.names, track:S.track, tableOnly:S.tableOnly });
-$('#newBtn').onclick = () => { if (confirm('Start a new round? All tiles are cleared.')) { mutate(()=>{ S=fresh(S.setN,S.nPlayers,S.hand,keepPrefs()); }); votes=[]; $('#setDlg').close(); setStatus('New round.'); } };
+$('#newBtn').onclick = () => { if (confirm('Start a new round? All tiles are cleared.')) { mutate(()=>{ S=fresh(S.setN,S.nPlayers,S.hand,keepPrefs()); }); votes=[]; if ($('#setDlg').open) $('#setDlg').close(); setStatus('New round.'); } };
 function reconfigure(setN, nP, hand) {
   if (Object.keys(S.tiles).length && !confirm('Changing this starts a new round. Continue?')) { render(); return; }
   const max = Math.floor(allTiles(setN).length/nP);
@@ -541,17 +543,55 @@ function watchTick() {
     votes.push({table, hand}); if (votes.length>VOTE_N) votes.shift();
     const tc={}, hc={};
     votes.forEach(v=>{ v.table.forEach(k=>tc[k]=(tc[k]||0)+1); v.hand.forEach(k=>hc[k]=(hc[k]||0)+1); });
-    const mineToPlayed = autoSplit() || S.tableOnly;   // my tile seen on the board = I played it
+    if (autoSplit()) { if (votes.length===VOTE_N) mirrorScreen(tc, hc); }
+    else accumulate(tc, hc);
+  }
+  watchTimer = setTimeout(watchTick, 400);
+}
+
+// Online game: the whole board and my hand are always on screen, so the state simply MIRRORS the screen.
+// Nothing old can linger, and when the board empties a new round starts by itself.
+function mirrorScreen(tc, hc) {
+  const cur = k => S.tiles[k] && S.tiles[k].s;
+  // hysteresis: a tile appears after being seen in 3 of 4 scans and disappears after missing 3 of 4
+  const board = Object.keys(tc).filter(k => tc[k] >= (cur(k)==='played' ? 2 : VOTE_NEED));
+  const hand = Object.keys(hc).filter(k => hc[k] >= (cur(k)==='mine' ? 2 : VOTE_NEED) && !board.includes(k));
+  if (!board.length && !hand.length) return;                     // nothing visible (tab hidden?): keep state
+  const oldPlayed = Object.keys(S.tiles).filter(k=>cur(k)==='played'), oldMine = Object.keys(S.tiles).filter(k=>cur(k)==='mine');
+  const same = (a,b) => a.length===b.length && a.every(k=>b.includes(k));
+  if (same(board, oldPlayed) && same(hand, oldMine)) return;
+  const newRound = !board.length && oldPlayed.length >= 2;
+  mutate(()=>{
+    if (newRound) { const n=S.names; S = Object.assign(fresh(S.setN,S.nPlayers,S.hand,keepPrefs()), {names:n}); S.log.push('— New round —'); }
+    const prev = S.tiles, tiles = {}, added = [];
+    for (const k of board) {
+      const p = prev[k];
+      const by = p && p.s==='played' ? p.by : p && p.s==='mine' ? 0 : (S.track ? S.cur : -1);
+      tiles[k] = { s:'played', by };
+      if (!p || p.s!=='played') {
+        added.push('✅'+fmt(k)); S.recent.push({k, s:'played'});
+        S.log.push((by===0?'I':by>0?pname(by):'Someone')+' played '+fmt(k));
+        if (S.track && by>=0) S.cur = nextP(by);
+      }
+    }
+    for (const k of hand) { tiles[k] = { s:'mine' }; if (!prev[k] || prev[k].s!=='mine') { added.push('✋'+fmt(k)); S.recent.push({k, s:'mine'}); } }
+    S.order = S.order.filter(k=>board.includes(k)).concat(board.filter(k=>!S.order.includes(k)));
+    if (!same(board, oldPlayed)) S.endsFix = null;   // a manual end fix only applies to the board it was made on
+    S.tiles = tiles; S.seen = hand.slice(); S.recent = S.recent.slice(-30);
+    if (added.length) { setStatus((newRound?'New round. ':'')+added.join('  '), true); if (navigator.vibrate) navigator.vibrate(40); }
+  });
+}
+
+// Camera at a real table: only part of the game is visible, so tiles are added as they show up.
+function accumulate(tc, hc) {
+    const mineToPlayed = S.tableOnly;   // my tile seen on the table = I played it
     const newPlayed = Object.keys(tc).filter(k=>tc[k]>=VOTE_NEED && (!S.tiles[k] || (mineToPlayed && S.tiles[k].s==='mine')));
-    // a tile seen in my hand row is mine (also fixes a tile that was wrongly counted as played)
     const newMine = Object.keys(hc).filter(k=>hc[k]>=VOTE_NEED && (!S.tiles[k] || S.tiles[k].s==='played') && !newPlayed.includes(k));
     if (newPlayed.length || newMine.length) {
       mutate(()=>{ newMine.forEach(k=>addTile(k,'mine')); newPlayed.forEach(k=>addTile(k,'played', S.tiles[k] && S.tiles[k].s==='mine' && (S.seen||[]).includes(k) ? 0 : undefined)); });
       setStatus([newPlayed.length?'Played: '+newPlayed.map(fmt).join(', '):'', newMine.length?'My hand: '+newMine.map(fmt).join(', '):''].filter(Boolean).join(' · '), true);
       if (navigator.vibrate) navigator.vibrate(40);
     }
-  }
-  watchTimer = setTimeout(watchTick, 400);
 }
 $('#watchBtn').onclick = () => {
   if (!isLive) { // photo: one shot
